@@ -8,7 +8,7 @@
 #include <wireless_ardusub//HROVSettings.h>
 #include <dccomms/Utils.h>
 
-namespace merbots {
+namespace wireless_ardusub {
 
 HROVSettings::HROVSettings() {
 	_Init();

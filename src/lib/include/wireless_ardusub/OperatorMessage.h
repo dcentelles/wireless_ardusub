@@ -12,7 +12,7 @@
 #include <wireless_ardusub/HROVMoveOrder.h>
 #include <wireless_ardusub/HROVSettings.h>
 
-namespace merbots {
+namespace wireless_ardusub {
 
 class OperatorMessage;
 

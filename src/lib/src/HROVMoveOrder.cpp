@@ -9,7 +9,7 @@
 #include <wireless_ardusub/utils.hpp>
 #include <dccomms/Utils.h>
 
-namespace merbots {
+namespace wireless_ardusub {
 
 HROVMoveOrder::HROVMoveOrder() {
     _Init();

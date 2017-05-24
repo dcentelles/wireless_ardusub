@@ -8,7 +8,7 @@
 #ifndef INCLUDE_MERBOTS_CONSTANTS_H_
 #define INCLUDE_MERBOTS_CONSTANTS_H_
 
-namespace merbots{
+namespace wireless_ardusub{
 
 #define USBL_ACOUSTIC_ADDR 1
 #define GIRONA_ACOUSTIC_ADDR 2

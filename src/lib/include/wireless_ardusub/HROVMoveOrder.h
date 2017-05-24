@@ -11,7 +11,7 @@
 #include <merbots_whrov_msgs/movement.h>
 #include <wireless_ardusub/Constants.h>
 
-namespace merbots {
+namespace wireless_ardusub {
 
 class HROVMoveOrder;
 

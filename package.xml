@@ -58,6 +58,13 @@
   <run_depend>tf</run_depend>
   <run_depend>merbots_whrov_msgs</run_depend>
 
+    <build_depend>visp_ros</build_depend>
+    <run_depend>visp_ros</run_depend>
+    <build_depend>cv_bridge</build_depend>
+    <build_depend>image_transport</build_depend>
+    <run_depend>cv_bridge</run_depend>
+    <run_depend>image_transport</run_depend>
+
   <!-- The export tag contains other, unspecified, tags -->
   <export>
     <!-- Other tools can request additional information be placed here -->

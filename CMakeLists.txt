@@ -16,6 +16,9 @@ find_package(catkin REQUIRED COMPONENTS
   tf
   message_generation
   merbots_whrov_msgs
+  cv_bridge
+  image_transport
+  visp_ros
 )
 
 catkin_package(
@@ -25,6 +28,9 @@ catkin_package(
     std_msgs
     actionlib_msgs
     message_runtime
+    cv_bridge
+    image_transport
+    visp_ros
 )
 
 roslaunch_add_file_check(launch)
@@ -80,7 +86,7 @@ endif()
 ENDFOREACH()
 
 ## Add support for C++11, supported in ROS Kinetic and newer
-add_definitions(-std=c++11)
+add_definitions(-fPIC -std=c++11)
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
@@ -106,7 +112,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${${PROJECT_NAME}_INCLUDE_DIRS
 
 SET(ROVA rov_control)
 add_executable (${ROVA} ${SRCPATH}main/rov_control.cpp)
-target_link_libraries(${ROVA} telerobotics ${catkin_LIBRARIES} ${PROJECT_NAME})
+target_link_libraries(${ROVA} telerobotics image-utils ${catkin_LIBRARIES} ${PROJECT_NAME})
 
 
 install(TARGETS ${PROJECT_NAME} ${ROVA}

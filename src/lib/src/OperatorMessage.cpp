@@ -7,7 +7,7 @@
 
 #include <wireless_ardusub/OperatorMessage.h>
 
-namespace merbots {
+namespace wireless_ardusub {
 
 const uint8_t OperatorMessage::MessageLength =
         HROVMoveOrder::OrderSize +

@@ -12,7 +12,7 @@
 #include <wireless_ardusub/Constants.h>
 
 
-namespace merbots {
+namespace wireless_ardusub {
 
 class HROVMessage;
 

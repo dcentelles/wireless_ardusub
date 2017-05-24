@@ -2,7 +2,7 @@
 #define UTILS_HPP
 #include <math.h>
 
-namespace merbots {
+namespace wireless_ardusub {
 namespace utils{
 
 static constexpr double range_yaw = M_PI * 2;
