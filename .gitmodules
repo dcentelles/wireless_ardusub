@@ -1,0 +1,6 @@
+[submodule "modules/telerobotics"]
+	path = modules/telerobotics
+	url = https://github.com/dcentelles/telerobotics.git
+[submodule "modules/image-utils"]
+	path = modules/image-utils
+	url = https://github.com/dcentelles/image-utils.git
