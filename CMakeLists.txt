@@ -19,6 +19,7 @@ find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   image_transport
   visp_ros
+  mavros_msgs
 )
 
 catkin_package(
@@ -31,6 +32,7 @@ catkin_package(
     cv_bridge
     image_transport
     visp_ros
+    mavros_msgs
 )
 
 roslaunch_add_file_check(launch)
