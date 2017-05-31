@@ -26,6 +26,8 @@ extern "C"
 #include <merbots_whrov_msgs/hrov_settings.h>
 //EndMerbots
 
+#include <mavros_msgs/OverrideRCIn.h>
+
 //Logging
 #include <Loggable.h>
 
@@ -125,6 +127,7 @@ static bool controlWorker_mustContinue_flag;
 static bool messageSenderWorker_mustContinue_flag;
 static std::thread messageSenderWorker;
 
+static ros::Publisher rcPublisher;
 
 void UpdateSettings(wireless_ardusub::HROVSettingsPtr settings, ROVCamera * rovCamera)
 {
@@ -286,6 +289,7 @@ void controlWorker_work(void)
         }
 
         //2: handle the new order of movement
+        /*
         std::unique_lock<std::mutex> poseLock(currentHROVPose_mutex);
         while(!currentHROVPose_updated)
         {
@@ -299,6 +303,7 @@ void controlWorker_work(void)
         auto currentRoll = currentHROVPose.roll;
 
         poseLock.unlock();
+        */
 
         //from dm to m
         auto requestZ = newMoveOrder->GetZ() / 10.;
@@ -307,13 +312,45 @@ void controlWorker_work(void)
         auto requestYaw = wireless_ardusub::utils::GetContinuousYaw(newMoveOrder->GetYaw());
 
         bool validOrder = true;
+
+        mavros_msgs::OverrideRCIn rcMsg;
+
+        boost::array<int,8> rcDefault = { 1500, 1500, 1500, 1500, 1500, 1500, 1500 , 1500};
+        boost::array<int,8> rcIn = rcDefault;
+
+        int inc = 200;
+        int millis = 2000;
         if(newMoveOrder->Relative())
         {
             switch(newMoveOrder->GetFrame ())
             {
             case wireless_ardusub::HROVMoveOrder::Frame::ROV_FRAME:
             {
+                if(requestZ > 0)
+                   rcIn[2] += inc;
+                else if(requestZ < 0)
+                   rcIn[2] -= inc;
 
+                if(requestX > 0)
+                   rcIn[5] += inc;
+                else if(requestX < 0)
+                   rcIn[5] -= inc;
+
+                if(requestY > 0)
+                {
+                  rcIn[0] += inc;
+                  rcIn[6] += inc;
+                }
+                else if(requestY < 0)
+                {
+                  rcIn[0] -= inc;
+                  rcIn[6] -= inc;
+                }
+
+                if(requestYaw > 0)
+                   rcIn[3] += inc;
+                else if(requestYaw < 0)
+                   rcIn[3] -= inc;
                 break;
             }
             case wireless_ardusub::HROVMoveOrder::Frame::WORLD_FRAME:
@@ -325,12 +362,15 @@ void controlWorker_work(void)
                 validOrder = false;
                 break;
             }
+            rcMsg.channels = rcIn;
         }
-
 
         if(validOrder)
         {
-
+            rcPublisher.publish(rcMsg);
+            this_thread::sleep_for(std::chrono::milliseconds(millis));
+            rcMsg.channels = rcDefault;
+            rcPublisher.publish(rcMsg);
         }
 
         currentHROVMessage_mutex.lock();
@@ -407,6 +447,17 @@ void initROSInterface(ros::NodeHandle & nh, int argc, char** argv,  ROVCamera & 
     startMessageSenderWorker(&rovCamera);
     startOperatorMsgParserWorker(&rovCamera);
     startControlWorker();
+
+    currentHROVMessage_mutex.lock();
+    currentHROVMessage->SetYaw(0);
+    currentHROVMessage->SetZ(0);
+    currentHROVMessage->SetX(0);
+    currentHROVMessage->SetY(0);
+    currentHROVMessage_updated = true;
+    currentHROVMessage_mutex.unlock();
+    currentHROVMessage_cond.notify_one();
+
+    rcPublisher = nh.advertise<mavros_msgs::OverrideRCIn>("/mavros/rc/override", 1);
 }
 
 static void
@@ -418,10 +469,94 @@ defaultParams(struct debtEncParam *e, struct debtDecParam *d)
 }
 
 
-void GetParams(ros::NodeHandle & nh)
+int GetParams(ros::NodeHandle & nh)
 {
   eparam = new debtEncParam();
   defaultParams(eparam, &dparam);
+
+  std::string cameraTopic;
+  if(!nh.getParam("image",cameraTopic))
+  {
+      ROS_ERROR("Failed to get param image");
+      return 1;
+  }
+  else
+  {
+     ROS_INFO("camera topic: %s",cameraTopic.c_str());
+  }
+  params.cameraTopic = cameraTopic;
+
+  char * cmasterUri = getenv ("ROS_MASTER_URI");
+  std::string masterUri = cmasterUri;
+  ROS_INFO("ROS MASTER URI: %s",masterUri.c_str());
+
+  params.masterUri = masterUri;
+
+  int remoteAddr;
+  if(!nh.getParam("remoteAddr",remoteAddr))
+  {
+      ROS_ERROR("Failed to get param remoteAddr");
+      return 1;
+  }
+  else
+  {
+     ROS_INFO("Remote addr: %d", remoteAddr);
+  }
+
+  params.remoteAddr = remoteAddr;
+
+  int localAddr;
+  if(!nh.getParam("localAddr",localAddr))
+  {
+      ROS_ERROR("Failed to get param localAddr");
+      return 1;
+  }
+  else
+  {
+     ROS_INFO("local addr: %d", localAddr);
+  }
+
+  params.localAddr = localAddr;
+
+  bool log2Console;
+  if(!nh.getParam("log2Console",log2Console))
+  {
+      ROS_ERROR("Failed to get param log2Console");
+      return 1;
+  }
+  else
+  {
+     ROS_INFO("log2Console: %d", log2Console);
+  }
+
+  params.log2Console = log2Console;
+
+  LinkType linkType;
+  std::string slinkType;
+  if(!nh.getParam("linkType",slinkType))
+  {
+      ROS_ERROR("Failed to get param linkType");
+      return 1;
+  }
+  else
+  {
+      if(slinkType == "fulld")
+      {
+          linkType = LinkType::fullDuplex;
+      }
+      else if (slinkType == "halfd")
+      {
+          linkType = LinkType::halfDuplex;
+      }
+      else
+      {
+          ROS_ERROR("wrong linkType value '%s'", slinkType.c_str ());
+          return 1;
+      }
+      ROS_INFO("linkType: %s", slinkType.c_str ());
+  }
+  params.linkType = linkType;
+  return 0;
 }
 
 int main(int argc, char** argv)
@@ -432,7 +567,106 @@ int main(int argc, char** argv)
   ros::init(argc, argv, "rov_control");
   ros::NodeHandle nh("~");
 
-   GetParams(nh);
+  if(GetParams(nh))
+    return 1;
 
+  //////////// GRABBER AND ENCODER SETUP
+  vpImage<vpRGBa> Image;
+  vpROSGrabber grabber;
+  grabber.setMasterURI(params.masterUri);
+  grabber.setImageTopic(params.cameraTopic);
+  grabber.open(Image);
+
+
+  struct sigaction sa;
+  memset(&sa, 0, sizeof(sa));
+  sigemptyset(&sa.sa_mask);
+  sa.sa_sigaction = segfault_sigaction;
+  sa.sa_flags   = SA_SIGINFO;
+
+  sigaction(SIGSEGV, &sa, NULL);
+
+
+  struct imgBuffer *img = NULL;
+  /* prepare an image buffer for the input image */
+  if ((img = imgBuffer_aligned_new(1))) {
+          if (!imgBuffer_reinit(img, pconfig.width, pconfig.height, COLORFORMAT_FMT_420))
+                  return 1;
+  }
+  else return 1;
+
+  /* setup the output buffer */
+  unsigned char *buffer = NULL;
+  int buflen = 0;
+  int fixed = 0;
+  if (eparam->maxsize)
+  {
+    buffer = (unsigned char *) malloc(buflen = eparam->maxsize);
+    fixed = 1;
+  }
+
+  ROVCamera rovCamera(params.linkType);
+  rovCamera.SetLocalAddr(params.localAddr);
+  rovCamera.SetRemoteAddr(params.remoteAddr);
+
+  rovCamera.SetLogLevel(Loggable::debug);
+  rovCamera.FlushLogOn(cpplogging::Loggable::info);
+  rovCamera.LogToConsole(params.log2Console);
+  //rovCamera.LogToFile("camera_comms_whrov_log");
+
+  Log->set_level(spdlog::level::debug);
+  Log->flush_on(spd::level::info);
+
+  cvImageResized.create(pconfig.height, pconfig.width, CV_8UC3);
+  //http://stackoverflow.com/questions/14897525/create-yuv-mat-in-opencv-on-android
+  cvImageYuv.create(pconfig.height + pconfig.height/2, pconfig.width, CV_8UC1); //We allocate the buffer for a yuv420 size
+  cvImageYuv.data = img->buffer; //imgBuffer will share the same buf
+
+  try
+  {
+      rovCamera.SetTxStateSize(wireless_ardusub::HROVMessage::MessageLength);
+      rovCamera.SetRxStateSize(wireless_ardusub::OperatorMessage::MessageLength);
+      rovCamera.SetMaxImageTrunkLength(pconfig.maxPacketLength-wireless_ardusub::HROVMessage::MessageLength);
+      rovCamera.SetOrdersReceivedCallback(&HandleOperatorMessageReceived);
+
+      ros::Rate rate(30); // 30 hz
+      initROSInterface(nh, argc, argv, rovCamera);
+
+      rovCamera.Start();
+      while(ros::ok())
+      {
+          if(!rovCamera.SendingCurrentImage())
+          {
+              /////////CAPTURE
+              grabber.acquire(Image);
+
+	      /////////TRANSFORM
+	      //ViSP has not a method to convert RGB to YUV420, so we convert first to an OpenCV type
+	      vpImageConvert::convert(Image, cvImage);
+	      cv::resize(cvImage, cvImageResized, cv::Size(pconfig.width, pconfig.height));
+	      cv::cvtColor(cvImageResized, cvImageYuv, CV_RGB2YUV_I420);
+
+	      config_mutex.lock(); //At the moment, only the compression parameters will be dynamic
+
+              /////////COMPRESS
+              int res = encode(eparam, &buffer, buflen, fixed, img);
+
+	      /////////PREPARE TO SEND
+	      if(res)
+	      {
+		      Log->info("Sending the new captured image...");
+		      rovCamera.SendImage(buffer, pconfig.frameSize);
+	      }
+	      config_mutex.unlock();
+	  }
+	  ros::spinOnce();
+	  rate.sleep();
+      }
+  }
+  catch(std::exception& e)
+  {
+          Log->error("Exception: {}", e.what());
+          exit(1);
+  }
   return 0;
 }
