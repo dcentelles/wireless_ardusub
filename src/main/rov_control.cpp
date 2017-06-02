@@ -27,7 +27,7 @@ extern "C"
 //EndMerbots
 
 #include <mavros_msgs/OverrideRCIn.h>
-
+#include <sensor_msgs/Imu.h>
 //Logging
 #include <Loggable.h>
 
@@ -128,6 +128,7 @@ static bool messageSenderWorker_mustContinue_flag;
 static std::thread messageSenderWorker;
 
 static ros::Publisher rcPublisher;
+static ros::Subscriber ardusubNav_sub;
 
 void UpdateSettings(wireless_ardusub::HROVSettingsPtr settings, ROVCamera * rovCamera)
 {
@@ -289,7 +290,7 @@ void controlWorker_work(void)
         }
 
         //2: handle the new order of movement
-        /*
+        
         std::unique_lock<std::mutex> poseLock(currentHROVPose_mutex);
         while(!currentHROVPose_updated)
         {
@@ -303,7 +304,6 @@ void controlWorker_work(void)
         auto currentRoll = currentHROVPose.roll;
 
         poseLock.unlock();
-        */
 
         //from dm to m
         auto requestZ = newMoveOrder->GetZ() / 10.;
@@ -318,8 +318,8 @@ void controlWorker_work(void)
         boost::array<int,8> rcDefault = { 1500, 1500, 1500, 1500, 1500, 1500, 1500 , 1500};
         boost::array<int,8> rcIn = rcDefault;
 
-        int inc = 200;
-        int millis = 2000;
+        int inc = 150;
+        int millis = 1009;
         if(newMoveOrder->Relative())
         {
             switch(newMoveOrder->GetFrame ())
@@ -327,30 +327,30 @@ void controlWorker_work(void)
             case wireless_ardusub::HROVMoveOrder::Frame::ROV_FRAME:
             {
                 if(requestZ > 0)
-                   rcIn[2] += inc;
+                   rcIn[2] += (int) (requestZ*inc);
                 else if(requestZ < 0)
-                   rcIn[2] -= inc;
+                   rcIn[2] -= (int) (requestZ*inc);
 
                 if(requestX > 0)
-                   rcIn[5] += inc;
+                   rcIn[5] += (int) (requestX*inc);
                 else if(requestX < 0)
-                   rcIn[5] -= inc;
+                   rcIn[5] -= (int) (requestX*inc);
 
                 if(requestY > 0)
                 {
-                  rcIn[0] += inc;
-                  rcIn[6] += inc;
+                  rcIn[0] += (int) (requestY*inc);
+                  rcIn[6] += (int) (requestY*inc);
                 }
                 else if(requestY < 0)
                 {
-                  rcIn[0] -= inc;
-                  rcIn[6] -= inc;
+                  rcIn[0] -= (int) (requestY*inc);
+                  rcIn[6] -= (int) (requestY*inc);
                 }
 
                 if(requestYaw > 0)
-                   rcIn[3] += inc;
+                   rcIn[3] += (int) (requestYaw*inc);
                 else if(requestYaw < 0)
-                   rcIn[3] -= inc;
+                   rcIn[3] -= (int) (requestYaw*inc);
                 break;
             }
             case wireless_ardusub::HROVMoveOrder::Frame::WORLD_FRAME:
@@ -440,6 +440,26 @@ void initMessages(void)
     currentHROVPose_updated = false;
 }
 
+void HandleNewNavigationData(const sensor_msgs::Imu::ConstPtr & msg, ROVCamera * rovCamera)
+{
+    //Convert from m to dm
+    currentHROVMessage_mutex.lock();
+    currentHROVMessage->SetYaw(wireless_ardusub::utils::GetDiscreteYaw(msg->orientation.z));
+    currentHROVMessage->SetZ(wireless_ardusub::utils::GetDiscreteYaw(msg->orientation.z));
+    currentHROVMessage->SetX(wireless_ardusub::utils::GetDiscreteYaw(msg->orientation.x));
+    currentHROVMessage->SetY(wireless_ardusub::utils::GetDiscreteYaw(msg->orientation.y));
+    currentHROVMessage_updated = true;
+    currentHROVMessage_mutex.unlock();
+    currentHROVMessage_cond.notify_one();
+
+    currentHROVPose_mutex.lock();
+    currentHROVPose.yaw = msg->orientation.z;
+    currentHROVPose_updated = true;
+    currentHROVPose_mutex.unlock();
+    currentHROVPose_cond.notify_one();
+
+}
+
 void initROSInterface(ros::NodeHandle & nh, int argc, char** argv,  ROVCamera & rovCamera)
 {
     initMessages();
@@ -447,6 +467,12 @@ void initROSInterface(ros::NodeHandle & nh, int argc, char** argv,  ROVCamera & 
     startMessageSenderWorker(&rovCamera);
     startOperatorMsgParserWorker(&rovCamera);
     startControlWorker();
+
+    ardusubNav_sub = nh.subscribe<sensor_msgs::Imu>(
+            "/mavros/imu/data",
+            1,
+            boost::bind(HandleNewNavigationData, _1, &rovCamera)
+         );
 
     currentHROVMessage_mutex.lock();
     currentHROVMessage->SetYaw(0);

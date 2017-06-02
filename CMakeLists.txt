@@ -20,6 +20,7 @@ find_package(catkin REQUIRED COMPONENTS
   image_transport
   visp_ros
   mavros_msgs
+  sensor_msgs
 )
 
 catkin_package(
@@ -33,6 +34,9 @@ catkin_package(
     image_transport
     visp_ros
     mavros_msgs
+  
+    sensor_msgs
+  sensor_msgs  sensor_msgs
 )
 
 roslaunch_add_file_check(launch)
