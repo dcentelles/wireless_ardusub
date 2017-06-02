@@ -2,6 +2,7 @@
 
 //ROS
 #include <ros/ros.h>
+#include <tf/transform_listener.h> //for position relative to ROV frame
 //end ROS
 
 #include <telerobotics/ROVCamera.h>
@@ -28,6 +29,8 @@ extern "C"
 
 #include <mavros_msgs/OverrideRCIn.h>
 #include <sensor_msgs/Imu.h>
+#include <mavros_msgs/VFR_HUD.h>
+
 //Logging
 #include <Loggable.h>
 
@@ -121,6 +124,7 @@ static bool currentHROVPose_updated;
 //operatorMsgParserWorker vars
 static bool operatorMsgParserWorker_mustContinue_flag;
 static std::thread operatorMsgParserWorker;
+static std::thread headingWorker;
 
 static bool controlWorker_mustContinue_flag;
 
@@ -129,6 +133,13 @@ static std::thread messageSenderWorker;
 
 static ros::Publisher rcPublisher;
 static ros::Subscriber ardusubNav_sub;
+static ros::Subscriber ardusubHUD_sub;
+
+static int rcDefVal = 1500;
+static boost::array<int,8> rcDefault = { rcDefVal, rcDefVal, rcDefVal, rcDefVal, rcDefVal, rcDefVal, rcDefVal , rcDefVal};
+static boost::array<int,8> rcIn = { rcDefVal, rcDefVal, rcDefVal, rcDefVal, rcDefVal, rcDefVal, rcDefVal , rcDefVal};
+static bool keepHeading = false;
+static uint16_t desiredHeading = 0;
 
 void UpdateSettings(wireless_ardusub::HROVSettingsPtr settings, ROVCamera * rovCamera)
 {
@@ -174,6 +185,10 @@ void UpdateSettings(wireless_ardusub::HROVSettingsPtr settings, ROVCamera * rovC
 void CancelCurrentMoveOrder()
 {
     Log->info("Cancel current order of movement");
+    keepHeading = false;
+    mavros_msgs::OverrideRCIn rcMsg;
+    rcMsg.channels = rcDefault;
+    rcPublisher.publish(rcMsg);
 }
 
 void operatorMsgParserWork(ROVCamera * rovCamera)
@@ -250,6 +265,60 @@ void startOperatorMsgParserWorker(ROVCamera * rovCamera)
     operatorMsgParserWorker = std::thread(operatorMsgParserWork, rovCamera);
 }
 
+/**
+   Length (angular) of a shortest way between two angles.
+  It will be in range [0, 180].
+
+ private int distance(int alpha, int beta) {
+     int phi = Math.abs(beta - alpha) % 360;       // This is either the distance or 360 - distance
+     int distance = phi > 180 ? 360 - phi : phi;
+     return distance;
+ }
+*/
+
+int angleDistance(int alpha, int beta)
+{
+  int phi = std::abs(beta - alpha) % 360;       // This is either the distance or 360 - distance
+  int distance = phi > 180 ? 360 - phi : phi;
+  return distance;
+}
+
+void headingWorker_work(void)
+{
+  auto inc = 55;
+  while(1)
+  {
+    int currentHeading = std::round(currentHROVPose.yaw);
+    int ahdiff = angleDistance(currentHeading, desiredHeading);
+
+    bool right = true;
+    if(ahdiff + currentHeading % 360 == desiredHeading)
+      right = false;
+
+    if(keepHeading && ahdiff > 0)
+    {
+       if(right > 0)
+         rcIn[3] = rcDefVal+inc;
+       else
+         rcIn[3] = rcDefVal-inc;
+    }
+    else
+    {
+      rcIn[3] = rcDefVal;
+    }
+    mavros_msgs::OverrideRCIn rcMsg;
+    rcMsg.channels = rcIn;
+    rcPublisher.publish(rcMsg);
+
+    this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+}
+
+void startHeadingWorker(void)
+{
+    headingWorker = std::thread(headingWorker_work);
+}
+
 void terminateOperatorMsgParserWorker(void)
 {
     operatorMsgParserWorker_mustContinue_flag = false;
@@ -309,48 +378,38 @@ void controlWorker_work(void)
         auto requestZ = newMoveOrder->GetZ() / 10.;
         auto requestX = newMoveOrder->GetX() / 10.;
         auto requestY = newMoveOrder->GetY() / 10.;
-        auto requestYaw = wireless_ardusub::utils::GetContinuousYaw(newMoveOrder->GetYaw());
+        auto requestYaw = newMoveOrder->GetYaw();//wireless_ardusub::utils::GetContinuousYaw(newMoveOrder->GetYaw());
 
         bool validOrder = true;
 
         mavros_msgs::OverrideRCIn rcMsg;
 
-        boost::array<int,8> rcDefault = { 1500, 1500, 1500, 1500, 1500, 1500, 1500 , 1500};
-        boost::array<int,8> rcIn = rcDefault;
-
-        int inc = 150;
-        int millis = 1009;
+        int inc = 500;
+        int millis = 1000;
         if(newMoveOrder->Relative())
         {
             switch(newMoveOrder->GetFrame ())
             {
             case wireless_ardusub::HROVMoveOrder::Frame::ROV_FRAME:
             {
-                if(requestZ > 0)
-                   rcIn[2] += (int) (requestZ*inc);
-                else if(requestZ < 0)
-                   rcIn[2] -= (int) (requestZ*inc);
+                if(requestZ != 0)
+                   rcIn[2] = rcDefVal + (int) (requestZ*inc);
 
-                if(requestX > 0)
-                   rcIn[5] += (int) (requestX*inc);
-                else if(requestX < 0)
-                   rcIn[5] -= (int) (requestX*inc);
+                if(requestX != 0)
+                   rcIn[5] = rcDefVal + (int) (requestX*inc);
 
-                if(requestY > 0)
+                if(requestY != 0)
                 {
-                  rcIn[0] += (int) (requestY*inc);
-                  rcIn[6] += (int) (requestY*inc);
-                }
-                else if(requestY < 0)
-                {
-                  rcIn[0] -= (int) (requestY*inc);
-                  rcIn[6] -= (int) (requestY*inc);
+                  rcIn[0] = rcDefVal + (int) (requestY*inc);
+                  rcIn[6] = rcDefVal + (int) (requestY*inc);
                 }
 
-                if(requestYaw > 0)
-                   rcIn[3] += (int) (requestYaw*inc);
-                else if(requestYaw < 0)
-                   rcIn[3] -= (int) (requestYaw*inc);
+                if(requestYaw != 0)
+                {
+                  desiredHeading = requestYaw;
+                  keepHeading = true;
+                }
+
                 break;
             }
             case wireless_ardusub::HROVMoveOrder::Frame::WORLD_FRAME:
@@ -362,14 +421,18 @@ void controlWorker_work(void)
                 validOrder = false;
                 break;
             }
-            rcMsg.channels = rcIn;
         }
 
         if(validOrder)
         {
+            rcMsg.channels = rcIn;
             rcPublisher.publish(rcMsg);
             this_thread::sleep_for(std::chrono::milliseconds(millis));
-            rcMsg.channels = rcDefault;
+            rcIn[0] = rcDefVal;
+            rcIn[2] = rcDefVal;
+            rcIn[5] = rcDefVal;
+            rcIn[6] = rcDefVal;
+            rcMsg.channels = rcIn;
             rcPublisher.publish(rcMsg);
         }
 
@@ -440,23 +503,58 @@ void initMessages(void)
     currentHROVPose_updated = false;
 }
 
+void HandleNewHUDData(const mavros_msgs::VFR_HUD::ConstPtr & msg, ROVCamera * rovCamera)
+{
+  currentHROVMessage_mutex.lock();
+  currentHROVMessage->SetYaw (msg->heading);
+  currentHROVMessage_updated = true;
+  currentHROVMessage_mutex.unlock();
+  currentHROVMessage_cond.notify_one();
+
+  currentHROVPose_mutex.lock();
+  currentHROVPose.yaw = msg->heading;
+  currentHROVPose_updated = true;
+  currentHROVPose_mutex.unlock();
+  currentHROVPose_cond.notify_one();
+}
+
 void HandleNewNavigationData(const sensor_msgs::Imu::ConstPtr & msg, ROVCamera * rovCamera)
 {
-    //Convert from m to dm
-    currentHROVMessage_mutex.lock();
-    currentHROVMessage->SetYaw(wireless_ardusub::utils::GetDiscreteYaw(msg->orientation.z));
-    currentHROVMessage->SetZ(wireless_ardusub::utils::GetDiscreteYaw(msg->orientation.z));
-    currentHROVMessage->SetX(wireless_ardusub::utils::GetDiscreteYaw(msg->orientation.x));
-    currentHROVMessage->SetY(wireless_ardusub::utils::GetDiscreteYaw(msg->orientation.y));
-    currentHROVMessage_updated = true;
-    currentHROVMessage_mutex.unlock();
-    currentHROVMessage_cond.notify_one();
+  //the following is not correct! x, y z is the components of a Quaternion, not the Euler angles.
 
-    currentHROVPose_mutex.lock();
-    currentHROVPose.yaw = msg->orientation.z;
-    currentHROVPose_updated = true;
-    currentHROVPose_mutex.unlock();
-    currentHROVPose_cond.notify_one();
+  tf::Quaternion rotation(
+        msg->orientation.x,
+        msg->orientation.y,
+        msg->orientation.z,
+        msg->orientation.w);
+
+  tf::Matrix3x3 rotMat(rotation);
+
+  tfScalar yaw, pitch, roll;
+  rotMat.getEulerYPR (yaw,pitch,roll);
+
+  int rx,ry,rz;
+  rx = wireless_ardusub::utils::GetDiscreteYaw(roll);
+  ry = wireless_ardusub::utils::GetDiscreteYaw(pitch);
+  rz = wireless_ardusub::utils::GetDiscreteYaw(yaw);
+
+  rx = rx > 180 ? -(360-rx) : rx;
+  ry = ry > 180 ? -(360-ry) : ry;
+  //rz = rz > 180 ? -(360-rz) : rz;
+
+  currentHROVMessage_mutex.lock();
+  //currentHROVMessage->SetYaw (rz);
+  currentHROVMessage->SetX(rx);
+  currentHROVMessage->SetY(ry);
+  currentHROVMessage_updated = true;
+  currentHROVMessage_mutex.unlock();
+  currentHROVMessage_cond.notify_one();
+
+  currentHROVPose_mutex.lock();
+  //currentHROVPose.yaw = 0;
+  currentHROVPose_updated = true;
+  currentHROVPose_mutex.unlock();
+  currentHROVPose_cond.notify_one();
 
 }
 
@@ -474,6 +572,12 @@ void initROSInterface(ros::NodeHandle & nh, int argc, char** argv,  ROVCamera & 
             boost::bind(HandleNewNavigationData, _1, &rovCamera)
          );
 
+    ardusubHUD_sub = nh.subscribe<mavros_msgs::VFR_HUD>(
+            "/mavros/vfr_hud",
+            1,
+            boost::bind(HandleNewHUDData, _1, &rovCamera)
+         );
+
     currentHROVMessage_mutex.lock();
     currentHROVMessage->SetYaw(0);
     currentHROVMessage->SetZ(0);
@@ -484,6 +588,9 @@ void initROSInterface(ros::NodeHandle & nh, int argc, char** argv,  ROVCamera & 
     currentHROVMessage_cond.notify_one();
 
     rcPublisher = nh.advertise<mavros_msgs::OverrideRCIn>("/mavros/rc/override", 1);
+
+
+    startHeadingWorker();
 }
 
 static void
