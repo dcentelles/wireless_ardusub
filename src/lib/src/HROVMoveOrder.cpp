@@ -77,7 +77,7 @@ void HROVMoveOrder::SetX(int _X)
     *ptr |= (X & 0x1fc0) >> 6; // 7
     ptr++;
     *ptr &= 0x03;
-    *ptr = (X & 0x3f) << 2; // +6
+    *ptr |= (X & 0x3f) << 2; // +6
 }
 
 
@@ -107,7 +107,7 @@ void HROVMoveOrder::SetY(int _Y)
     *ptr = (Y & 0x7f8) >> 3; //+8
     ptr++;
     *ptr &= 0x1f;
-    *ptr = (Y & 0x7) << 5; //+3
+    *ptr |= (Y & 0x7) << 5; //+3
 }
 
 
