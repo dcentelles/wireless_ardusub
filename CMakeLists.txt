@@ -54,18 +54,6 @@ MACRO(GETPROJECTS result curdir)
   SET(${result} ${dirlist})
 ENDMACRO()
 
-MACRO(SUBDIRLIST result curdir)
-  FILE(GLOB children RELATIVE ${curdir} ${curdir}/*)
-  SET(dirlist "")
-  FOREACH(child ${children})
-    IF(IS_DIRECTORY ${curdir}/${child})
-	LIST(APPEND dirlist ${child})
-    ENDIF()
-  ENDFOREACH()
-  SET(${result} ${dirlist})
-ENDMACRO()
-
-
 ###########
 ## Build ##
 ###########
@@ -73,11 +61,12 @@ ENDMACRO()
 ####### HANDLE DEPENDENCIES ######
 
 SET(${PROJECT_NAME}_DEPS_DIR "modules")
-SUBDIRLIST(${PROJECT_NAME}_DEPS ${CMAKE_CURRENT_SOURCE_DIR}/${${PROJECT_NAME}_DEPS_DIR})
-message(STATUS "Dependencies found: ${${PROJECT_NAME}_DEPS}")
+SET(TEMPPATH ${CMAKE_CURRENT_SOURCE_DIR}/${${PROJECT_NAME}_DEPS_DIR})
+GETPROJECTS(${PROJECT_NAME}_DEPS ${TEMPPATH})
+message(STATUS "Dependencies found in ${TEMPPATH}: ${${PROJECT_NAME}_DEPS}")
 FOREACH(subdir ${${PROJECT_NAME}_DEPS})
 if (NOT TARGET ${subdir})
-	add_subdirectory(${${PROJECT_NAME}_DEPS_DIR}/${subdir})
+        add_subdirectory(${${PROJECT_NAME}_DEPS_DIR}/${subdir})
 endif()
 ENDFOREACH()
 
@@ -87,7 +76,7 @@ GETPROJECTS(projects ${CMAKE_CURRENT_SOURCE_DIR})
 message(STATUS "Subprojects found: ${projects}")
 FOREACH(subdir ${projects})
 if (NOT TARGET ${subdir})
-	add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${subdir})
+        add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${subdir})
 endif()
 ENDFOREACH()
 
@@ -104,12 +93,15 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
-SET(${PROJECT_NAME}_INCLUDE_DIRS "src/lib/include")
+SET(${PROJECT_NAME}_INCLUDE_DIRS
+    "src/lib/include"
+    "modules")
 SET(${PROJECT_NAME}_CPP_FILES
                         ${SRCPATH}lib/src/HROVSettings.cpp
                         ${SRCPATH}lib/src/HROVMoveOrder.cpp
                         ${SRCPATH}lib/src/OperatorMessage.cpp
                         ${SRCPATH}lib/src/HROVMessage.cpp
+                        ${SRCPATH}lib/src/Mavlink.cpp
                         )
 
 add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
