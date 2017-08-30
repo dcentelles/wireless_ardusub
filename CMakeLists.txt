@@ -109,8 +109,11 @@ target_link_libraries(${PROJECT_NAME} dccomms)
 target_include_directories(${PROJECT_NAME} PUBLIC ${${PROJECT_NAME}_INCLUDE_DIRS})
 
 SET(ROVA rov_control)
+SET(OPERATOR operator_control)
 add_executable (${ROVA} ${SRCPATH}main/rov_control.cpp)
 target_link_libraries(${ROVA} telerobotics image-utils ${catkin_LIBRARIES} ${PROJECT_NAME})
+add_executable (${OPERATOR} ${SRCPATH}main/operator_control.cpp)
+target_link_libraries(${OPERATOR} telerobotics image-utils ${catkin_LIBRARIES} ${PROJECT_NAME})
 
 
 install(TARGETS ${PROJECT_NAME} ${ROVA}
