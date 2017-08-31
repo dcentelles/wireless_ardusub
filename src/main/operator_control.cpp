@@ -656,7 +656,7 @@ int main(int argc, char ** argv) {
   }
   else
   {
-    ROS_INFO("MASTER URI: %d", log2Console);
+    ROS_INFO("Log2Console: %d", log2Console);
   }
   int remoteAddr;
   if(!nh.getParam("remoteAddr",remoteAddr))
@@ -666,7 +666,7 @@ int main(int argc, char ** argv) {
   }
   else
   {
-    ROS_INFO("MASTER URI: %d", remoteAddr);
+    ROS_INFO("remoteAddr: %d", remoteAddr);
   }
   int localAddr;
   if(!nh.getParam("localAddr",localAddr))
@@ -676,7 +676,28 @@ int main(int argc, char ** argv) {
   }
   else
   {
-    ROS_INFO("MASTER URI: %d", localAddr);
+    ROS_INFO("localAddr: %d", localAddr);
+  }
+
+  std::string log2File;
+  bool logging2File = false;
+  if(!nh.getParam("log2File",log2File))
+  {
+    ROS_ERROR("Failed to get param log2File");
+    return 1;
+  }
+  else
+  {
+    ROS_INFO("log2File: %s", log2File.c_str());
+    if(log2File == "")
+    {
+      ROS_INFO("No log to file");
+    }
+    else
+    {
+      ROS_INFO("Logging to file '%s'", log2File.c_str());
+      logging2File = true;
+    }
   }
 
   LinkType linkType;
@@ -701,7 +722,7 @@ int main(int argc, char ** argv) {
       ROS_ERROR("wrong linkType value '%s'", slinkType.c_str ());
       return 1;
     }
-    ROS_INFO("MASTER URI: %s", slinkType.c_str ());
+    ROS_INFO("linkType: %s", slinkType.c_str ());
   }
 
   defaultParams(&e, &d);
@@ -718,19 +739,22 @@ int main(int argc, char ** argv) {
   sa.sa_flags   = SA_SIGINFO;
 
   ROVOperator rovOperator(linkType);
-  rovOperator.SetLocalAddr(localAddr);
-  rovOperator.SetRemoteAddr(remoteAddr);
 
   rovOperator.SetLogLevel(Loggable::debug);
   rovOperator.FlushLogOn(cpplogging::Loggable::info);
   rovOperator.LogToConsole(log2Console);
-  //rovOperator.LogToFile("operator_comms_whrov_log");
+  if(logging2File)
+  {
+    rovOperator.LogToFile(log2File);
+  }
+
+  rovOperator.SetLocalAddr(localAddr);
+  rovOperator.SetRemoteAddr(remoteAddr);
 
   Log->set_level(spdlog::level::info);
   Log->flush_on(spd::level::info);
 
   Log->info("remote addr: {}", remoteAddr);
-
 
   sigaction(SIGSEGV, &sa, NULL);
   imgBuffer = new uint8_t[1280*720*3*2+30]; //Unos 30 bytes mas para el header (que no sabemos, de momento, cuanto ocupa, y que depende de la resolucion de cada imagen recibida

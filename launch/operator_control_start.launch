@@ -1,6 +1,7 @@
 <launch>
 	<arg name="namespace" default="/merbots/whrov"/>
 	<arg name="log2Console" default="false"/>
+	<arg name="log2File" default=""/>
 
 	<arg name="localAddr" default="1"/>
 	<arg name="remoteAddr" default="2"/>
@@ -14,6 +15,7 @@
 			<param name="localAddr" type="int" value="$(arg localAddr)"/>
 			<param name="remoteAddr" type="int" value="$(arg remoteAddr)"/>
 			<param name="linkType" type="str" value="$(arg linkType)"/>
+			<param name="log2File" type="str" value="$(arg log2File)"/>
 		</node>
 	</group>
 	<node pkg="whrov_hmi" name="whrov_hmi" type="whrov_hmi" respawn="false" ns="$(arg namespace)"/>
