@@ -45,14 +45,15 @@ set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_COLOR_MAKEFILE   ON)
 
 #http://stackoverflow.com/questions/7787823/cmake-how-to-get-the-name-of-all-subdirectories-of-a-directory
-MACRO(GETPROJECTS result curdir)
+function(GETPROJECTS result curdir)
   FILE(GLOB children RELATIVE ${curdir} ${curdir}/*/CMakeLists.txt)
+  SET(dirlist "")
   FOREACH(file ${children})
-  	get_filename_component(subdir ${file} DIRECTORY)
-  	LIST(APPEND dirlist ${subdir})
+        get_filename_component(subdir ${file} DIRECTORY)
+        LIST(APPEND dirlist ${subdir})
   ENDFOREACH()
-  SET(${result} ${dirlist})
-ENDMACRO()
+  SET(${result} ${dirlist} PARENT_SCOPE)
+endfunction()
 
 ###########
 ## Build ##
@@ -61,9 +62,9 @@ ENDMACRO()
 ####### HANDLE DEPENDENCIES ######
 
 SET(${PROJECT_NAME}_DEPS_DIR "modules")
-SET(TEMPPATH ${CMAKE_CURRENT_SOURCE_DIR}/${${PROJECT_NAME}_DEPS_DIR})
-GETPROJECTS(${PROJECT_NAME}_DEPS ${TEMPPATH})
-message(STATUS "Dependencies found in ${TEMPPATH}: ${${PROJECT_NAME}_DEPS}")
+SET(${PROJECT_NAME}_TMP0 ${CMAKE_CURRENT_SOURCE_DIR}/${${PROJECT_NAME}_DEPS_DIR})
+GETPROJECTS(${PROJECT_NAME}_DEPS ${${PROJECT_NAME}_TMP0})
+message(STATUS "Dependencies found in ${${PROJECT_NAME}_TMP0}: ${${PROJECT_NAME}_DEPS}")
 FOREACH(subdir ${${PROJECT_NAME}_DEPS})
 if (NOT TARGET ${subdir})
         add_subdirectory(${${PROJECT_NAME}_DEPS_DIR}/${subdir})
