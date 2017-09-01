@@ -34,17 +34,19 @@
 #include <wireless_ardusub/OperatorMessage.h>
 //EndMerbots
 
+//Logging
+#include <cpplogging/Logger.h>
+
 extern "C"
 {
 #include <image_utils/libdebt.h>
 #include <image_utils/image_utils.h>
 }
 
-
 using namespace std;
 using namespace dcauv;
 
-static std::shared_ptr<spd::logger> Log = spd::stdout_color_mt("OperatorMain");
+static LoggerPtr Log = cpplogging::CreateLogger("OperatorMain");
 static struct debtEncParam e;
 static struct debtDecParam d;
 static uint8_t * imgBuffer;
@@ -117,7 +119,7 @@ public:
   {
     if(actionServer.isPreemptRequested() || !ros::ok())
     {
-      Log->info("{}: Preempted", actionName);
+      Log->Info("{}: Preempted", actionName);
       actionServer.setPreempted();
       return true;
     }
@@ -391,7 +393,7 @@ struct ProtocolConfig
 static void
 usage(char *pgmname, struct debtEncParam *e, struct debtDecParam *d, ProtocolConfig & pconfig)
 {
-  Log->info(
+  Log->Info(
         "usage: {} [options]\n"
         "Options:\n"
         "\t-v [0|1]         - Use vector instructions if possible <{}>\n"
@@ -527,11 +529,11 @@ getOptions(int argc, char *argv[], struct debtEncParam *e, struct debtDecParam *
     usage(pgmName(argv[0]), e, d, pconfig);
   }
   if (optind < argc) {
-    Log->error("Unexpected argument(s) after options\n");
+    Log->Error("Unexpected argument(s) after options\n");
     usage(pgmName(argv[0]), e, d, pconfig);
   }
   if (dec && (enc || graph)) {
-    Log->error("Decode and Encode flags cannot be used simultaneously\n");
+    Log->Error("Decode and Encode flags cannot be used simultaneously\n");
     usage(pgmName(argv[0]), e, d, pconfig);
   }
   return graph ? -1 : !dec;
@@ -570,7 +572,7 @@ void HandleCurrentState(ROVOperator & rovOperator)
 
 void HandleNewImage(ROVOperator & rovOperator)
 {
-  Log->info("New image received! Decoding...");
+  Log->Info("New image received! Decoding...");
 
   int fsize = rovOperator.GetLastReceivedImage(imgBuffer);
   d.bitlen = fsize << 3;
@@ -580,10 +582,10 @@ void HandleNewImage(ROVOperator & rovOperator)
   int uvsize = img->uvwidth * img->uvheight;
   int yuvsize = ysize + (uvsize << 1);
 
-  Log->debug("yb: {}",(unsigned long) y);
-  Log->debug("Width: {}, Height: {}", img->width, img->height);
-  Log->debug("y size: {}, U and V size: {}", ysize, uvsize);
-  Log->debug("yuvsize: {}", yuvsize);
+  Log->Debug("yb: {}",(unsigned long) y);
+  Log->Debug("Width: {}, Height: {}", img->width, img->height);
+  Log->Debug("y size: {}, U and V size: {}", ysize, uvsize);
+  Log->Debug("yuvsize: {}", yuvsize);
 
 
   if(img->width != g_iwidth || img->height != g_iheight)
@@ -740,8 +742,8 @@ int main(int argc, char ** argv) {
 
   ROVOperator rovOperator(linkType);
 
-  rovOperator.SetLogLevel(Loggable::debug);
-  rovOperator.FlushLogOn(cpplogging::Loggable::info);
+  rovOperator.SetLogLevel(cpplogging::LogLevel::debug);
+  rovOperator.FlushLogOn(cpplogging::LogLevel::info);
   rovOperator.LogToConsole(log2Console);
   if(logging2File)
   {
@@ -751,10 +753,10 @@ int main(int argc, char ** argv) {
   rovOperator.SetLocalAddr(localAddr);
   rovOperator.SetRemoteAddr(remoteAddr);
 
-  Log->set_level(spdlog::level::info);
-  Log->flush_on(spd::level::info);
+  Log->SetLogLevel(cpplogging::LogLevel::info);
+  Log->FlushLogOn(cpplogging::LogLevel::info);
 
-  Log->info("remote addr: {}", remoteAddr);
+  Log->Info("remote addr: {}", remoteAddr);
 
   sigaction(SIGSEGV, &sa, NULL);
   imgBuffer = new uint8_t[1280*720*3*2+30]; //Unos 30 bytes mas para el header (que no sabemos, de momento, cuanto ocupa, y que depende de la resolucion de cada imagen recibida
@@ -773,7 +775,7 @@ int main(int argc, char ** argv) {
 
   }catch(std::exception & e)
   {
-    Log->error("Radio Exception: {}", e.what());
+    Log->Error("Radio Exception: {}", e.what());
     exit(1);
   }
 

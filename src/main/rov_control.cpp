@@ -32,7 +32,7 @@ extern "C"
 #include <mavros_msgs/VFR_HUD.h>
 
 //Logging
-#include <Loggable.h>
+#include <cpplogging/Logger.h>
 
 
 //visp_ros-grabbing
@@ -51,7 +51,7 @@ extern "C"
 using namespace std;
 using namespace dcauv;
 
-static std::shared_ptr<spd::logger> Log = spd::stdout_color_mt("BlueROVControl");
+static LoggerPtr Log = cpplogging::CreateLogger("BlueROVControl");
 
 static cv::Mat cvImage;
 static cv::Mat cvImageResized;
@@ -163,7 +163,7 @@ void UpdateSettings(wireless_ardusub::HROVSettingsPtr settings, ROVCamera * rovC
                 );
         optGetRect(eparam, roiparam);
         eparam->uroi_shift = msg->image_config.roi_shift;
-        Log->debug("ROI conf.: {} -- shift: {}", roiparam, eparam->uroi_shift);
+        Log->Debug("ROI conf.: {} -- shift: {}", roiparam, eparam->uroi_shift);
     }
     else
     {
@@ -184,7 +184,7 @@ void UpdateSettings(wireless_ardusub::HROVSettingsPtr settings, ROVCamera * rovC
 
 void CancelCurrentMoveOrder()
 {
-    Log->info("Cancel current order of movement");
+    Log->Info("Cancel current order of movement");
     keepHeading = false;
     mavros_msgs::OverrideRCIn rcMsg;
     rcMsg.channels = rcDefault;
@@ -225,11 +225,11 @@ void operatorMsgParserWork(ROVCamera * rovCamera)
                 {
 
                 case wireless_ardusub::OperatorMessage::NoOrder:
-                    Log->info("Message received from operator does not contain an order");
+                    Log->Info("Message received from operator does not contain an order");
                     break;
                 case wireless_ardusub::OperatorMessage::Move:
                     CancelCurrentMoveOrder();
-                    Log->info("Received order of movement");
+                    Log->Info("Received order of movement");
                     if(!currentHROVMessage->Ready())
                         CancelCurrentMoveOrder ();
                     currentHROVMessage->LastOrderCancelledFlag(false);
@@ -247,7 +247,7 @@ void operatorMsgParserWork(ROVCamera * rovCamera)
 
                     break;
                 default:
-                    Log->critical("Order type is unknown");
+                    Log->Critical("Order type is unknown");
                     break;
                 }
             }
@@ -327,7 +327,7 @@ void terminateOperatorMsgParserWorker(void)
 
 void HandleOperatorMessageReceived(ROVCamera & rovCamera)
 {
-    Log->info("Message received!");
+    Log->Info("Message received!");
     currentOperatorMessage_mutex.lock();
     rovCamera.GetCurrentRxState(currentOperatorMessage->GetBuffer());
     currentOperatorMessage_mutex.unlock();
@@ -417,7 +417,7 @@ void controlWorker_work(void)
                 break;
 
             default:
-                Log->critical("FRAME NOT SUPPORTED!");
+                Log->Critical("FRAME NOT SUPPORTED!");
                 validOrder = false;
                 break;
             }
@@ -742,13 +742,13 @@ int main(int argc, char** argv)
   rovCamera.SetLocalAddr(params.localAddr);
   rovCamera.SetRemoteAddr(params.remoteAddr);
 
-  rovCamera.SetLogLevel(Loggable::debug);
-  rovCamera.FlushLogOn(cpplogging::Loggable::info);
+  rovCamera.SetLogLevel(cpplogging::LogLevel::debug);
+  rovCamera.FlushLogOn(cpplogging::LogLevel::info);
   rovCamera.LogToConsole(params.log2Console);
   //rovCamera.LogToFile("camera_comms_whrov_log");
 
-  Log->set_level(spdlog::level::debug);
-  Log->flush_on(spd::level::info);
+  Log->SetLogLevel(cpplogging::LogLevel::debug);
+  Log->FlushLogOn(cpplogging::LogLevel::info);
 
   cvImageResized.create(pconfig.height, pconfig.width, CV_8UC3);
   //http://stackoverflow.com/questions/14897525/create-yuv-mat-in-opencv-on-android
@@ -787,7 +787,7 @@ int main(int argc, char** argv)
 	      /////////PREPARE TO SEND
 	      if(res)
 	      {
-		      Log->info("Sending the new captured image...");
+		      Log->Info("Sending the new captured image...");
 		      rovCamera.SendImage(buffer, pconfig.frameSize);
 	      }
 	      config_mutex.unlock();
@@ -798,7 +798,7 @@ int main(int argc, char** argv)
   }
   catch(std::exception& e)
   {
-          Log->error("Exception: {}", e.what());
+          Log->Error("Exception: {}", e.what());
           exit(1);
   }
   return 0;
