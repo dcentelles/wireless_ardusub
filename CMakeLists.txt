@@ -120,15 +120,16 @@ SET(${PROJECT_NAME}_CPP_FILES
                         )
 
 add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
-target_link_libraries(${PROJECT_NAME} ${DCCOMMS_GIT})
+target_link_libraries(${PROJECT_NAME} ${TELEROBOTICS_GIT})
 target_include_directories(${PROJECT_NAME} PUBLIC ${${PROJECT_NAME}_INCLUDE_DIRS})
 
+message("IMAGE UTILS NAME ======> ${IMAGE-UTILS_GIT}")
 SET(ROVA rov_control)
 SET(OPERATOR operator_control)
 add_executable (${ROVA} ${SRCPATH}main/rov_control.cpp)
-target_link_libraries(${ROVA} ${TELEROBOTICS_GIT} image-utils ${catkin_LIBRARIES} ${PROJECT_NAME})
+target_link_libraries(${ROVA} ${TELEROBOTICS_GIT} ${IMAGE-UTILS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
 add_executable (${OPERATOR} ${SRCPATH}main/operator_control.cpp)
-target_link_libraries(${OPERATOR} ${TELEROBOTICS_GIT} image-utils ${catkin_LIBRARIES} ${PROJECT_NAME})
+target_link_libraries(${OPERATOR} ${TELEROBOTICS_GIT} ${IMAGE-UTILS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
 
 
 install(TARGETS ${PROJECT_NAME} ${ROVA}
