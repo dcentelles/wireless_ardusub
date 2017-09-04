@@ -7,3 +7,6 @@
 [submodule "modules/mavlink_cpp"]
 	path = modules/mavlink_cpp
 	url = https://github.com/dcentelles/mavlink_cpp.git
+[submodule "modules/dccomms"]
+	path = modules/dccomms
+	url = https://github.com/dcentelles/dccomms.git
