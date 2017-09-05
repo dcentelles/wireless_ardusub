@@ -20,47 +20,43 @@ typedef std::shared_ptr<OperatorMessage> OperatorMessagePtr;
 
 class OperatorMessage {
 public:
-        const static uint8_t MessageLength;
-        OperatorMessage();
-        OperatorMessage(uint8_t *);
-        virtual ~OperatorMessage();
+  const static uint8_t MessageLength;
+  OperatorMessage();
+  OperatorMessage(uint8_t *);
+  virtual ~OperatorMessage();
 
-        static OperatorMessagePtr BuildOperatorMessage()
-        {
-            return OperatorMessagePtr(new OperatorMessage());
-        }
+  static OperatorMessagePtr BuildOperatorMessage() {
+    return OperatorMessagePtr(new OperatorMessage());
+  }
 
-        void UpdateFromBuffer(uint8_t *);
-        void GetBufferCopy(uint8_t *);
-        uint8_t * GetBuffer(){return buffer;}
+  void UpdateFromBuffer(uint8_t *);
+  void GetBufferCopy(uint8_t *);
+  uint8_t *GetBuffer() { return buffer; }
 
-        uint8_t GetOrderSeqNumber(); //returns 1 or 0
-        void SetOrderSeqNumber(uint8_t);
-      //  uint8_t IncOrderSeqNumber();
+  uint8_t GetOrderSeqNumber(); // returns 1 or 0
+  void SetOrderSeqNumber(uint8_t);
+  //  uint8_t IncOrderSeqNumber();
 
-        void CancelLastOrderFlag(bool );
-        bool CancelLastOrderFlag();
+  void CancelLastOrderFlag(bool);
+  bool CancelLastOrderFlag();
 
-        enum OrderType {NoOrder=0, Move, OtherNotImplemented};
-        OrderType GetOrderType();
-        void SetOrderType(OrderType);
-        HROVMoveOrderPtr GetMoveOrderCopy();
-        void SetMoveOrder(HROVMoveOrderPtr);
+  enum OrderType { NoOrder = 0, Move, OtherNotImplemented };
+  OrderType GetOrderType();
+  void SetOrderType(OrderType);
+  HROVMoveOrderPtr GetMoveOrderCopy();
+  void SetMoveOrder(HROVMoveOrderPtr);
 
-        HROVSettingsPtr GetSettingsCopy();
-        void SetSettings(HROVSettingsPtr);
+  HROVSettingsPtr GetSettingsCopy();
+  void SetSettings(HROVSettingsPtr);
 
 private:
-        void _Init();
-        uint8_t buffer[MAX_HROVSTATE_LENGHT];
+  void _Init();
+  uint8_t buffer[MAX_HROVSTATE_LENGHT];
 
-        const static uint8_t
-            ORDER_SEQ_FLAG = 0x80,
-            CANCEL_LAST_ORDER_FLAGH = 0x40,
-            ORDER_TYPE_MASK = 0x3
-            ;
-        uint8_t *messageInfo;
-        uint8_t *settingsBuffer, *moveOrderBuffer;
+  const static uint8_t ORDER_SEQ_FLAG = 0x80, CANCEL_LAST_ORDER_FLAGH = 0x40,
+                       ORDER_TYPE_MASK = 0x3;
+  uint8_t *messageInfo;
+  uint8_t *settingsBuffer, *moveOrderBuffer;
 };
 
 } /* namespace merbots */
