@@ -123,7 +123,6 @@ add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
 target_link_libraries(${PROJECT_NAME} ${TELEROBOTICS_GIT})
 target_include_directories(${PROJECT_NAME} PUBLIC ${${PROJECT_NAME}_INCLUDE_DIRS})
 
-message("IMAGE UTILS NAME ======> ${IMAGE-UTILS_GIT}")
 SET(ROVA rov_control)
 SET(OPERATOR operator_control)
 add_executable (${ROVA} ${SRCPATH}main/rov_control.cpp)
