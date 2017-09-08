@@ -116,7 +116,6 @@ SET(${PROJECT_NAME}_CPP_FILES
                         ${SRCPATH}lib/src/HROVMoveOrder.cpp
                         ${SRCPATH}lib/src/OperatorMessage.cpp
                         ${SRCPATH}lib/src/HROVMessage.cpp
-                        ${SRCPATH}lib/src/Mavlink.cpp
                         )
 
 add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
