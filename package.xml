@@ -48,6 +48,9 @@
   <build_depend>actionlib_msgs</build_depend>
   <build_depend>tf</build_depend>
   <build_depend>merbots_whrov_msgs</build_depend>
+  <build_depend>wireless_ardusub_msgs</build_depend>
+  <build_depend>joy</build_depend>
+  <build_depend>dynamic_reconfigure</build_depend>
 
   <run_depend>roscpp</run_depend>
   <run_depend>rospy</run_depend>
@@ -57,6 +60,8 @@
   <run_depend>actionlib_msgs</run_depend>
   <run_depend>tf</run_depend>
   <run_depend>merbots_whrov_msgs</run_depend>
+  <run_depend>wireless_ardusub_msgs</run_depend>
+  <run_depend>dynamic_reconfigure</run_depend>
 
     <build_depend>visp_ros</build_depend>
     <run_depend>visp_ros</run_depend>
@@ -64,6 +69,7 @@
     <build_depend>image_transport</build_depend>
     <run_depend>cv_bridge</run_depend>
     <run_depend>image_transport</run_depend>
+    <run_depend>joy</run_depend>
 
     <build_depend>mavros_msgs</build_depend>
     <run_depend>mavros_msgs</run_depend>

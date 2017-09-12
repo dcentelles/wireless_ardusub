@@ -53,11 +53,20 @@ find_package(catkin REQUIRED COMPONENTS
   tf
   message_generation
   merbots_whrov_msgs
+  wireless_ardusub_msgs
   cv_bridge
   image_transport
   visp_ros
   mavros_msgs
   sensor_msgs
+  dynamic_reconfigure
+)
+
+#find_package(catkin REQUIRED dynamic_reconfigure)
+
+#http://wiki.ros.org/dynamic_reconfigure/Tutorials/HowToWriteYourFirstCfgFile
+generate_dynamic_reconfigure_options(
+  cfg/wireless_teleop_joy.cfg
 )
 
 catkin_package(
@@ -69,6 +78,8 @@ catkin_package(
     message_runtime
     cv_bridge
     image_transport
+    merbots_whrov_msgs
+    wireless_ardusub_msgs
     visp_ros
     mavros_msgs
   
@@ -124,11 +135,14 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${${PROJECT_NAME}_INCLUDE_DIRS
 
 SET(ROVA rov_control)
 SET(OPERATOR operator_control)
+SET(TELEOP wireless_teleop_joy)
 add_executable (${ROVA} ${SRCPATH}main/rov_control.cpp)
 target_link_libraries(${ROVA} ${TELEROBOTICS_GIT} ${IMAGE-UTILS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
 add_executable (${OPERATOR} ${SRCPATH}main/operator_control.cpp)
 target_link_libraries(${OPERATOR} ${TELEROBOTICS_GIT} ${IMAGE-UTILS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
-
+add_executable (${TELEOP} ${SRCPATH}main/wireless_teleop_joy.cpp)
+target_link_libraries(${TELEOP} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES})
+add_dependencies(${TELEOP} ${PROJECT_NAME}_gencfg)
 
 install(TARGETS ${PROJECT_NAME} ${ROVA}
         LIBRARY DESTINATION "lib"
