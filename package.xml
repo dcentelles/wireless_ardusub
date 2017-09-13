@@ -48,7 +48,6 @@
   <build_depend>actionlib_msgs</build_depend>
   <build_depend>tf</build_depend>
   <build_depend>merbots_whrov_msgs</build_depend>
-  <build_depend>wireless_ardusub_msgs</build_depend>
   <build_depend>joy</build_depend>
   <build_depend>dynamic_reconfigure</build_depend>
 
@@ -60,7 +59,6 @@
   <run_depend>actionlib_msgs</run_depend>
   <run_depend>tf</run_depend>
   <run_depend>merbots_whrov_msgs</run_depend>
-  <run_depend>wireless_ardusub_msgs</run_depend>
   <run_depend>dynamic_reconfigure</run_depend>
 
     <build_depend>visp_ros</build_depend>

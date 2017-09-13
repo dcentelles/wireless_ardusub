@@ -53,7 +53,6 @@ find_package(catkin REQUIRED COMPONENTS
   tf
   message_generation
   merbots_whrov_msgs
-  wireless_ardusub_msgs
   cv_bridge
   image_transport
   visp_ros
@@ -79,7 +78,6 @@ catkin_package(
     cv_bridge
     image_transport
     merbots_whrov_msgs
-    wireless_ardusub_msgs
     visp_ros
     mavros_msgs
   
