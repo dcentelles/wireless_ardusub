@@ -29,7 +29,8 @@ int main(int argc, char **argv) {
   });
 
   stateReceiver.Start();
-
+  Log->SetLogLevel(LogLevel::info);
+  stateReceiver.SetLogLevel(LogLevel::info);
   while (1) {
     Log->Debug("I'm alive");
     std::this_thread::sleep_for(2000ms);

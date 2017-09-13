@@ -38,7 +38,6 @@ private:
 
   // state transmitter
   StateSender sender;
-
   // node handle
   ros::NodeHandle nh;
 
@@ -89,6 +88,8 @@ TeleopJoy::TeleopJoy() {
   SetLogName("TeleopJoy");
   sender.Start();
   Log->info("Sender initialized");
+
+  sender.SetLogLevel(LogLevel::info);
 }
 
 void TeleopJoy::spin() {
