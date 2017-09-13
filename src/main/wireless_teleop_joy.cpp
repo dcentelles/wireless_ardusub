@@ -9,14 +9,15 @@
 
 #include <cpplogging/cpplogging.h>
 #include <dynamic_reconfigure/server.h>
-#include <math.h>
-#include <ros/console.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Joy.h>
+#include <telerobotics/StateSender.h>
 #include <vector>
 #include <wireless_ardusub/wireless_teleop_joyConfig.h>
 
 using namespace cpplogging;
+using namespace dcauv;
+
 class TeleopJoy : public Logger {
 public:
   TeleopJoy();
@@ -34,6 +35,9 @@ private:
   void configCallback(wireless_ardusub::wireless_teleop_joyConfig &update,
                       uint32_t level);
   void joyCallback(const sensor_msgs::Joy::ConstPtr &joy);
+
+  // state transmitter
+  StateSender sender;
 
   // node handle
   ros::NodeHandle nh;
@@ -83,6 +87,8 @@ TeleopJoy::TeleopJoy() {
   initLT = false;
   initRT = false;
   SetLogName("TeleopJoy");
+  sender.Start();
+  Log->info("Sender initialized");
 }
 
 void TeleopJoy::spin() {
@@ -147,6 +153,16 @@ void TeleopJoy::joyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
   } else if (risingEdge(joy, config.arm_button)) {
     setArming(true);
   }
+  int state;
+  float raw = joy->axes[0];
+  if (raw > 0.4)
+    state = 1;
+  else if (raw < -0.4)
+    state = -1;
+  else
+    state = 0;
+  Log->info("State: {} (raw: {})", state, raw);
+  sender.SetState(sizeof(state), &state);
 
   // mode switching
   if (risingEdge(joy, config.stabilize_button)) {

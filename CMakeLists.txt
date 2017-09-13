@@ -105,7 +105,7 @@ ENDFOREACH()
 ######## END HANDLE DEPENDENCIES ######
 
 ## Add support for C++11, supported in ROS Kinetic and newer
-add_definitions(-fPIC -std=c++11)
+add_definitions(-fPIC -std=c++14)
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
@@ -134,13 +134,20 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${${PROJECT_NAME}_INCLUDE_DIRS
 SET(ROVA rov_control)
 SET(OPERATOR operator_control)
 SET(TELEOP wireless_teleop_joy)
+SET(TELEOP_ROV wireless_teleop_rov)
+
 add_executable (${ROVA} ${SRCPATH}main/rov_control.cpp)
 target_link_libraries(${ROVA} ${TELEROBOTICS_GIT} ${IMAGE-UTILS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
+
 add_executable (${OPERATOR} ${SRCPATH}main/operator_control.cpp)
 target_link_libraries(${OPERATOR} ${TELEROBOTICS_GIT} ${IMAGE-UTILS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
+
 add_executable (${TELEOP} ${SRCPATH}main/wireless_teleop_joy.cpp)
 target_link_libraries(${TELEOP} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES})
 add_dependencies(${TELEOP} ${PROJECT_NAME}_gencfg)
+
+add_executable (${TELEOP_ROV} ${SRCPATH}main/wireless_teleop_rov.cpp)
+target_link_libraries(${TELEOP_ROV} ${TELEROBOTICS_GIT})
 
 install(TARGETS ${PROJECT_NAME} ${ROVA}
         LIBRARY DESTINATION "lib"
