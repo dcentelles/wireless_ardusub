@@ -7,16 +7,19 @@
  * By centelld@uji.es for the wireless bluerov project
  */
 
+#include <cmath>
 #include <cpplogging/cpplogging.h>
 #include <dynamic_reconfigure/server.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Joy.h>
 #include <telerobotics/StateSender.h>
 #include <vector>
+#include <wireless_ardusub/TeleopOrder.h>
 #include <wireless_ardusub/wireless_teleop_joyConfig.h>
 
 using namespace cpplogging;
 using namespace dcauv;
+using namespace wireless_ardusub;
 
 class TeleopJoy : public Logger {
 public:
@@ -29,13 +32,13 @@ private:
   void setArming(bool armed);
   // void setMode(uint8_t mode);
   void cmdTakeoffLand(bool takeoff);
-  double computeAxisValue(const sensor_msgs::Joy::ConstPtr &joy, int index,
-                          double expo);
+  int8_t computeAxisValue(const sensor_msgs::Joy::ConstPtr &joy, int index);
   uint16_t mapToPpm(double in);
   void configCallback(wireless_ardusub::wireless_teleop_joyConfig &update,
                       uint32_t level);
   void joyCallback(const sensor_msgs::Joy::ConstPtr &joy);
 
+  TeleopOrderPtr order;
   // state transmitter
   StateSender sender;
   // node handle
@@ -62,7 +65,6 @@ private:
   enum { PPS_MIN = 1000, PPS_MAX = 2000 }; // uS
 
   // state
-  uint16_t mode;
   uint16_t camera_tilt;
   bool initLT;
   bool initRT;
@@ -81,7 +83,6 @@ TeleopJoy::TeleopJoy() {
       nh.subscribe<sensor_msgs::Joy>("joy", 1, &TeleopJoy::joyCallback, this);
 
   // initialize state variables
-  mode = MODE_STABILIZE;
   camera_tilt = 1500;
   initLT = false;
   initRT = false;
@@ -90,6 +91,7 @@ TeleopJoy::TeleopJoy() {
   Log->info("Sender initialized");
 
   sender.SetLogLevel(LogLevel::info);
+  order = TeleopOrder::Build();
 }
 
 void TeleopJoy::spin() {
@@ -119,27 +121,37 @@ void TeleopJoy::setArming(bool arm) {
   // https://github.com/mavlink/qgroundcontrol/issues/590
   // https://pixhawk.ethz.ch/mavlink/#MAV_CMD_COMPONENT_ARM_DISARM
   if (arm) {
-    Info("armed");
+    Debug("armed");
+    order->Arm(true);
+    order->DisArm(false);
   } else {
-    Info("disarmed");
+    Debug("disarmed");
+    order->Arm(false);
+    order->DisArm(true);
   }
 }
 
 void TeleopJoy::cmdTakeoffLand(bool takeoff) {
   // https://pixhawk.ethz.ch/mavlink/#MAV_CMD_NAV_LAND_LOCAL
   if (takeoff) {
-    Info("takeoff");
+    Debug("takeoff");
   } else {
-    Info("land");
+    Debug("land");
   }
 }
 
-double TeleopJoy::computeAxisValue(const sensor_msgs::Joy::ConstPtr &joy,
-                                   int index, double expo) {
+int8_t TeleopJoy::computeAxisValue(const sensor_msgs::Joy::ConstPtr &joy,
+                                   int index) {
   // return 0 if axis index is invalid
   if (index < 0 || index >= joy->axes.size()) {
     return 0.0;
   }
+
+  double raw = joy->axes[index]; // raw in [-1,1]
+  double dvalue = 127 * raw;
+  int8_t value = ceil(dvalue);
+  Log->debug("{}: Raw: {} ; DValue: {} ; Value: {}", index, raw, dvalue, value);
+  return value;
 }
 
 void TeleopJoy::joyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
@@ -154,46 +166,42 @@ void TeleopJoy::joyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
   } else if (risingEdge(joy, config.arm_button)) {
     setArming(true);
   }
-  int state;
-  float raw = joy->axes[0];
-  if (raw > 0.4)
-    state = 1;
-  else if (raw < -0.4)
-    state = -1;
-  else
-    state = 0;
-  Log->info("State: {} (raw: {})", state, raw);
-  sender.SetState(sizeof(state), &state);
+
+  auto x = computeAxisValue(joy, config.x_axis);
+  auto y = computeAxisValue(joy, config.y_axis);
+  auto z = computeAxisValue(joy, config.z_axis);
+  auto r = computeAxisValue(joy, config.wz_axis);
+
+  order->SetX(x);
+  order->SetY(y);
+  order->SetZ(z);
+  order->SetR(r);
 
   // mode switching
   if (risingEdge(joy, config.stabilize_button)) {
-    mode = MODE_STABILIZE;
+    order->SetFlyMode(FLY_MODE::STABILIZE);
   } else if (risingEdge(joy, config.alt_hold_button)) {
-    mode = MODE_ALT_HOLD;
+    order->SetFlyMode(FLY_MODE::DEPTH_HOLD);
+  }
+  std::string modeName = "";
+  switch (order->GetFlyMode()) {
+  case FLY_MODE::DEPTH_HOLD:
+    modeName = "DEPTH HOLD";
+    break;
+  case FLY_MODE::STABILIZE:
+    modeName = "STABILIZE";
+    break;
+  case FLY_MODE::MANUAL:
+    modeName = "MANUAL";
+    break;
+  default:
+    break;
   }
 
-  // takeoff and land
-  if (risingEdge(joy, config.land_button)) {
-    cmdTakeoffLand(false);
-  } else if (risingEdge(joy, config.takeoff_button)) {
-    cmdTakeoffLand(true);
-  }
-
-  // change camera_tilt
-  if (risingEdge(joy, config.cam_tilt_reset)) {
-    camera_tilt = 1500;
-  } else if (risingEdge(joy, config.cam_tilt_up)) {
-    camera_tilt = camera_tilt + config.cam_tilt_step;
-    if (camera_tilt > PPS_MAX) {
-      camera_tilt = PPS_MAX;
-    }
-  } else if (risingEdge(joy, config.cam_tilt_down)) {
-    camera_tilt = camera_tilt - config.cam_tilt_step;
-    if (camera_tilt < PPS_MIN) {
-      camera_tilt = PPS_MIN;
-    }
-  }
-
+  Log->info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
+            order->GetX(), order->GetY(), order->GetZ(), order->GetR(),
+            order->Arm() ? "true" : "false", modeName);
+  sender.SetState(TeleopOrder::Size, order->GetBuffer());
   // remember current button states for future comparison
   previous_buttons = std::vector<int>(joy->buttons);
 }

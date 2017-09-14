@@ -125,6 +125,7 @@ SET(${PROJECT_NAME}_CPP_FILES
                         ${SRCPATH}lib/src/HROVMoveOrder.cpp
                         ${SRCPATH}lib/src/OperatorMessage.cpp
                         ${SRCPATH}lib/src/HROVMessage.cpp
+                        ${SRCPATH}lib/src/TeleopOrder.cpp
                         )
 
 add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
@@ -143,11 +144,11 @@ add_executable (${OPERATOR} ${SRCPATH}main/operator_control.cpp)
 target_link_libraries(${OPERATOR} ${TELEROBOTICS_GIT} ${IMAGE-UTILS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
 
 add_executable (${TELEOP} ${SRCPATH}main/wireless_teleop_joy.cpp)
-target_link_libraries(${TELEOP} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES})
+target_link_libraries(${TELEOP} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
 add_dependencies(${TELEOP} ${PROJECT_NAME}_gencfg)
 
 add_executable (${TELEOP_ROV} ${SRCPATH}main/wireless_teleop_rov.cpp)
-target_link_libraries(${TELEOP_ROV} ${TELEROBOTICS_GIT})
+target_link_libraries(${TELEOP_ROV} ${TELEROBOTICS_GIT} ${PROJECT_NAME} ${MAVLINK_CPP_GIT})
 
 install(TARGETS ${PROJECT_NAME} ${ROVA}
         LIBRARY DESTINATION "lib"
