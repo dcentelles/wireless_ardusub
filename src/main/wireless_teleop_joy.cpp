@@ -173,15 +173,17 @@ void TeleopJoy::joyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
   auto r = computeAxisValue(joy, config.wz_axis);
 
   order->SetX(x);
-  order->SetY(y);
+  order->SetY(-1 * y);
   order->SetZ(z);
-  order->SetR(r);
+  order->SetR(-1 * r);
 
   // mode switching
   if (risingEdge(joy, config.stabilize_button)) {
     order->SetFlyMode(FLY_MODE::STABILIZE);
   } else if (risingEdge(joy, config.alt_hold_button)) {
     order->SetFlyMode(FLY_MODE::DEPTH_HOLD);
+  } else if (risingEdge(joy, 0)) {
+    order->SetFlyMode(FLY_MODE::MANUAL);
   }
   std::string modeName = "";
   switch (order->GetFlyMode()) {

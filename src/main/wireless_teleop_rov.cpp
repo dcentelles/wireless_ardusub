@@ -21,6 +21,10 @@ using namespace mavlink_cpp;
 
 static LoggerPtr Log;
 
+double getJoyAxisNormalized(int x) { return 200. / 256 * x; }
+double arduSubXYR(double per) { return per / 0.1; }
+double arduSubZ(double per) { return (per + 100) / 0.2; }
+
 int main(int argc, char **argv) {
   Log = CreateLogger("TeleopROV");
   Log->Info("Init");
@@ -41,26 +45,43 @@ int main(int argc, char **argv) {
     switch (order->GetFlyMode()) {
     case FLY_MODE::DEPTH_HOLD:
       modeName = "DEPTH HOLD";
-      //  control->SetDepthHoldMode();
+      control->SetDepthHoldMode();
       break;
     case FLY_MODE::STABILIZE:
       modeName = "STABILIZE";
-      //  control->SetStabilizeMode();
+      control->SetStabilizeMode();
       break;
     case FLY_MODE::MANUAL:
       modeName = "MANUAL";
+      control->SetManualMode();
       break;
     default:
       break;
     }
-
     Log->Info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
               order->GetX(), order->GetY(), order->GetZ(), order->GetR(),
               order->Arm() ? "true" : "false", modeName);
+
     int x = order->GetX();
     int y = order->GetY();
     int z = order->GetZ();
     int r = order->GetR();
+    // order:  y = 200/256x
+    // z control: y = 200/1000x - 100
+    // x,y and r control: y = 200/2000x
+
+    double xNorm = getJoyAxisNormalized(x);
+    double yNorm = getJoyAxisNormalized(y);
+    double zNorm = getJoyAxisNormalized(z);
+    double rNorm = getJoyAxisNormalized(r);
+    x = ceil(arduSubXYR(xNorm));
+    y = ceil(arduSubXYR(yNorm));
+    z = ceil(arduSubZ(zNorm));
+    r = ceil(arduSubXYR(rNorm));
+
+    Log->Info(
+        "Manual control: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}", x,
+        y, z, r, order->Arm() ? "true" : "false", modeName);
 
     control->SetManualControl(x, y, z, r);
     control->Arm(order->Arm());
