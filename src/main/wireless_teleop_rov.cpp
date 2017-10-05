@@ -31,7 +31,7 @@ int main(int argc, char **argv) {
   TeleopOrderPtr order = TeleopOrder::Build();
   StateReceiver stateReceiver;
   uint16_t localPort = 14550;
-  Ptr<GCS> control = CreateObject<GCS>(localPort);
+  mavlink_cpp::Ptr<GCS> control = mavlink_cpp::CreateObject<GCS>(localPort);
   control->SetLogName("GCS");
   control->SetLogLevel(debug);
   control->Start();
