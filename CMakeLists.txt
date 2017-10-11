@@ -126,6 +126,9 @@ SET(${PROJECT_NAME}_CPP_FILES
                         ${SRCPATH}lib/src/OperatorMessage.cpp
                         ${SRCPATH}lib/src/HROVMessage.cpp
                         ${SRCPATH}lib/src/TeleopOrder.cpp
+                        ${SRCPATH}lib/src/packets/SimplePacket.cpp
+                        ${SRCPATH}lib/src/nodes/Operator.cpp
+                        ${SRCPATH}lib/src/nodes/ROV.cpp
                         )
 
 add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
@@ -136,19 +139,25 @@ SET(ROVA rov_control)
 SET(OPERATOR operator_control)
 SET(TELEOP wireless_teleop_joy)
 SET(TELEOP_ROV wireless_teleop_rov)
+SET(TELEOP_V2 wireless_teleop_joy_v2)
+SET(TELEOP_ROV_V2 wireless_teleop_rov_v2)
 
-add_executable (${ROVA} ${SRCPATH}main/rov_control.cpp)
+add_executable (${ROVA} ${SRCPATH}main/control_v1/rov_control.cpp)
 target_link_libraries(${ROVA} ${TELEROBOTICS_GIT} ${IMAGE-UTILS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
-
-add_executable (${OPERATOR} ${SRCPATH}main/operator_control.cpp)
+add_executable (${OPERATOR} ${SRCPATH}main/control_v1/operator_control.cpp)
 target_link_libraries(${OPERATOR} ${TELEROBOTICS_GIT} ${IMAGE-UTILS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
 
-add_executable (${TELEOP} ${SRCPATH}main/wireless_teleop_joy.cpp)
+add_executable (${TELEOP} ${SRCPATH}main/control_v2/wireless_teleop_joy.cpp)
 target_link_libraries(${TELEOP} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
 add_dependencies(${TELEOP} ${PROJECT_NAME}_gencfg)
-
-add_executable (${TELEOP_ROV} ${SRCPATH}main/wireless_teleop_rov.cpp)
+add_executable (${TELEOP_ROV} ${SRCPATH}main/control_v2/wireless_teleop_rov.cpp)
 target_link_libraries(${TELEOP_ROV} ${TELEROBOTICS_GIT} ${PROJECT_NAME} ${MAVLINK_CPP_GIT})
+
+add_executable (${TELEOP_V2} ${SRCPATH}main/control_v3/wireless_teleop_joy.cpp)
+target_link_libraries(${TELEOP_V2} ${TELEROBOTICS_GIT} ${IMAGE-UTILS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
+add_dependencies(${TELEOP_V2} ${PROJECT_NAME}_gencfg)
+add_executable (${TELEOP_ROV_V2} ${SRCPATH}main/control_v3/wireless_teleop_rov.cpp)
+target_link_libraries(${TELEOP_ROV_V2} ${TELEROBOTICS_GIT} ${IMAGE-UTILS_GIT} ${PROJECT_NAME} ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
 
 install(TARGETS ${PROJECT_NAME} ${ROVA}
         LIBRARY DESTINATION "lib"
