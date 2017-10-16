@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+
+<launch>
+  <!-- start the teleop app -->
+  <node pkg="wireless_ardusub" type="rov_v3" name="rov_v3" output="screen" required="true"></node>
+</launch>
