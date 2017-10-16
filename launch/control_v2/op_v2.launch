@@ -7,5 +7,5 @@
   </node>
 
   <!-- start the teleop app -->
-  <node pkg="wireless_ardusub" type="wireless_teleop_joy" name="wireless_teleop_joy" output="screen" required="true"></node>
+  <node pkg="wireless_ardusub" type="op_v2" name="op_v2" output="screen" required="true"></node>
 </launch>

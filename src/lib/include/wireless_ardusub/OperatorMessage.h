@@ -5,8 +5,8 @@
  *      Author: centelld
  */
 
-#ifndef MERBOTS_LIB_INCLUDE_MERBOTS_OPERATORMESSAGE_H_
-#define MERBOTS_LIB_INCLUDE_MERBOTS_OPERATORMESSAGE_H_
+#ifndef INCLUDE_WIRELESS_ARDUSUB_OPERATORMESSAGE_H_
+#define INCLUDE_WIRELESS_ARDUSUB_OPERATORMESSAGE_H_
 
 #include <wireless_ardusub/Constants.h>
 #include <wireless_ardusub/HROVMoveOrder.h>

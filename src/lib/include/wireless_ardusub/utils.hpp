@@ -1,5 +1,5 @@
-#ifndef UTILS_HPP
-#define UTILS_HPP
+#ifndef INCLUDE_WIRELESS_ARDUSUB_UTILS_HPP
+#define INCLUDE_WIRELESS_ARDUSUB_UTILS_HPP
 #include <math.h>
 
 namespace wireless_ardusub {

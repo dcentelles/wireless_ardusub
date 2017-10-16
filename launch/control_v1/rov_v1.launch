@@ -39,7 +39,7 @@
 	</group>
 
 	<group if="$(arg runComms)">
-                <node pkg="wireless_ardusub" name="rov_control" type="rov_control" respawn="false"
+                <node pkg="wireless_ardusub" name="rov_v1" type="rov_v1" respawn="false"
 		ns="/merbots/whrov" output="screen">
 			<param name="remoteAddr" type="int" value="$(arg remoteAddr)"/>
 			<param name="localAddr" type="int" value="$(arg localAddr)"/>

@@ -1,5 +1,5 @@
-#ifndef TELEOPORDER_H
-#define TELEOPORDER_H
+#ifndef INCLUDE_WIRELESS_ARDUSUB_TELEOPORDER_H
+#define INCLUDE_WIRELESS_ARDUSUB_TELEOPORDER_H
 
 #include <cstdint>
 #include <memory>

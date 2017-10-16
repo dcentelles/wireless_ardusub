@@ -10,7 +10,7 @@
 	<arg name="linkType" default="halfd"/>
 
 	<group if="$(arg runComms)">
-		<node pkg="wireless_ardusub" name="operator_control" type="operator_control" respawn="true" ns="$(arg namespace)" output="screen">
+		<node pkg="wireless_ardusub" name="op_v1" type="op_v1" respawn="true" ns="$(arg namespace)" output="screen">
 			<param name="log2Console" value="$(arg log2Console)"/>
 			<param name="localAddr" type="int" value="$(arg localAddr)"/>
 			<param name="remoteAddr" type="int" value="$(arg remoteAddr)"/>

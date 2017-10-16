@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cpplogging/cpplogging.h>
+#include <dccomms_utils/S100Stream.h>
 #include <dynamic_reconfigure/server.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Joy.h>
@@ -90,9 +91,14 @@ TeleopJoy::TeleopJoy() {
   sender.Start();
   Log->info("Sender initialized");
 
+  auto stream = CreateObject<dccomms_utils::S100Stream>(
+      "/dev/ttyUSB0", SerialPortStream::BAUD_2400, 2000);
+  stream->Open();
+
   sender.SetLogLevel(LogLevel::info);
   sender.SetRxStateSize(HROVMessage::MessageLength);
   sender.SetTxStateSize(TeleopOrder::Size);
+  sender.SetCommsLink(stream);
   order = TeleopOrder::Build();
 }
 

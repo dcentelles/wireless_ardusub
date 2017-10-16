@@ -5,8 +5,8 @@
  *      Author: centelld
  */
 
-#ifndef INCLUDE_MERBOTS_CONSTANTS_H_
-#define INCLUDE_MERBOTS_CONSTANTS_H_
+#ifndef INCLUDE_WIRELESS_ARDUSUB_CONSTANTS_H_
+#define INCLUDE_WIRELESS_ARDUSUB_CONSTANTS_H_
 
 namespace wireless_ardusub {
 
@@ -20,4 +20,4 @@ namespace wireless_ardusub {
 #define BES_LENGTH 3
 }
 
-#endif /* INCLUDE_MERBOTS_CONSTANTS_H_ */
+#endif /* INCLUDE_WIRELESS_ARDUSUB_CONSTANTS_H_ */

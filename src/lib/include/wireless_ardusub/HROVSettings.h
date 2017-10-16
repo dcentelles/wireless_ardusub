@@ -5,8 +5,8 @@
  *      Author: centelld
  */
 
-#ifndef MERBOTS_LIB_INCLUDE_MERBOTS_HROVSETTINGS_H_
-#define MERBOTS_LIB_INCLUDE_MERBOTS_HROVSETTINGS_H_
+#ifndef INCLUDE_WIRELESS_ARDUSUB_HROVSETTINGS_H_
+#define INCLUDE_WIRELESS_ARDUSUB_HROVSETTINGS_H_
 
 #include <merbots_whrov_msgs/hrov_settings.h>
 #include <wireless_ardusub/Constants.h>
