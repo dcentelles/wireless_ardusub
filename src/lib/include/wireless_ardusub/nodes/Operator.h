@@ -29,7 +29,7 @@ public:
                    MAX_IMG_TRUNK_LENGTH = 40, MAX_IMG_STATE_LENGTH = 40,
                    IMG_CHKSUM_SIZE = 2, MAX_PACKET_LENGTH = 2048;
 
-  Operator();
+  Operator(Ptr<ICommsLink> comms);
   virtual ~Operator();
   void SetDesiredState(const void *data);
 
@@ -60,8 +60,6 @@ public:
   void SetMaxImageTrunkLength(int);
   void SetRxStateSize(int);
   void SetTxStateSize(int);
-
-  void SetCommsLink(Ptr<ICommsLink> comms);
 
 private:
   void _UpdateRxStateSize(int);

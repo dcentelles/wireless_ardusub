@@ -41,7 +41,7 @@ private:
 
   TeleopOrderPtr order;
   // state transmitter
-  Operator sender;
+  Ptr<Operator> sender;
   // node handle
   ros::NodeHandle nh;
 
@@ -88,18 +88,19 @@ TeleopJoy::TeleopJoy() {
   initLT = false;
   initRT = false;
   SetLogName("TeleopJoy");
-  sender.Start();
   Log->info("Sender initialized");
 
   auto stream = CreateObject<dccomms_utils::S100Stream>(
       "/dev/ttyUSB0", SerialPortStream::BAUD_2400, 2000);
   stream->Open();
 
-  sender.SetLogLevel(LogLevel::info);
-  sender.SetRxStateSize(HROVMessage::MessageLength);
-  sender.SetTxStateSize(TeleopOrder::Size);
-  sender.SetCommsLink(stream);
+  sender = CreateObject<Operator>(stream);
+  sender->SetLogLevel(LogLevel::info);
+  sender->SetRxStateSize(HROVMessage::MessageLength);
+  sender->SetTxStateSize(TeleopOrder::Size);
   order = TeleopOrder::Build();
+
+  sender->Start();
 }
 
 void TeleopJoy::spin() {
@@ -211,7 +212,7 @@ void TeleopJoy::joyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
   Log->info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
             order->GetX(), order->GetY(), order->GetZ(), order->GetR(),
             order->Arm() ? "true" : "false", modeName);
-  sender.SetDesiredState(order->GetBuffer());
+  sender->SetDesiredState(order->GetBuffer());
   // remember current button states for future comparison
   previous_buttons = std::vector<int>(joy->buttons);
 }

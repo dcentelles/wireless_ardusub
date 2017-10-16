@@ -17,7 +17,7 @@ void defaultImageReceivedCallback(Operator &rovOperator) {}
 
 void defaultStateReceivedCallback(Operator &rovOperator) {}
 
-Operator::Operator() : txservice(this), rxservice(this) {
+Operator::Operator(Ptr<ICommsLink> comms) : txservice(this), rxservice(this) {
   rxbuffer = 0;
   imgTrunkPtr = 0;
   txbuffer = 0;
@@ -25,6 +25,7 @@ Operator::Operator() : txservice(this), rxservice(this) {
   currentImgPtr = 0;
   rxStatePtr = 0;
   txStatePtr = 0;
+  _comms = comms;
 
   bigEndian = DataLinkFrame::IsBigEndian();
   imgTrunkInfoLength = IMG_TRUNK_INFO_SIZE;
@@ -147,8 +148,6 @@ void Operator::SetStateReceivedCallback(f_notification _callback) {
   stateReceivedCallback = _callback;
 }
 
-void Operator::SetCommsLink(Ptr<ICommsLink> comms) { _comms = comms; }
-
 void Operator::Start() {
   txdlf = CreateObject<SimplePacket>(100, dlfcrctype);
   rxdlf = CreateObject<SimplePacket>(100, dlfcrctype);
@@ -173,7 +172,10 @@ void Operator::Start() {
 
 void Operator::_Work() {}
 
-void Operator::_TxWork() {}
+void Operator::_TxWork() {
+  _SendPacketWithDesiredState();
+  std::this_thread::sleep_for(chrono::milliseconds(1000));
+}
 
 void Operator::_RxWork() {
   Log->debug("RX: waiting for new state from ROV...");
@@ -269,7 +271,6 @@ void Operator::_SendPacketWithDesiredState() {
       txdlf->UpdateFCS();
       Log->info("Sending packet with current desired state...");
       *_comms << txdlf;
-      std::this_thread::sleep_for(chrono::milliseconds(1000));
       while (_comms->BusyTransmitting())
         ;
     } else
