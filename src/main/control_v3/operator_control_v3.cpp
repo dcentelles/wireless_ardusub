@@ -12,13 +12,13 @@
 #include <dynamic_reconfigure/server.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Joy.h>
-#include <telerobotics/StateSender.h>
 #include <vector>
+#include <wireless_ardusub/HROVMessage.h>
 #include <wireless_ardusub/TeleopOrder.h>
+#include <wireless_ardusub/nodes/Operator.h>
 #include <wireless_ardusub/wireless_teleop_joyConfig.h>
 
 using namespace cpplogging;
-using namespace dcauv;
 using namespace wireless_ardusub;
 
 class TeleopJoy : public Logger {
@@ -40,7 +40,7 @@ private:
 
   TeleopOrderPtr order;
   // state transmitter
-  StateSender sender;
+  Operator sender;
   // node handle
   ros::NodeHandle nh;
 
@@ -91,6 +91,8 @@ TeleopJoy::TeleopJoy() {
   Log->info("Sender initialized");
 
   sender.SetLogLevel(LogLevel::info);
+  sender.SetRxStateSize(HROVMessage::MessageLength);
+  sender.SetTxStateSize(TeleopOrder::Size);
   order = TeleopOrder::Build();
 }
 
@@ -203,7 +205,7 @@ void TeleopJoy::joyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
   Log->info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
             order->GetX(), order->GetY(), order->GetZ(), order->GetR(),
             order->Arm() ? "true" : "false", modeName);
-  sender.SetState(TeleopOrder::Size, order->GetBuffer());
+  sender.SetDesiredState(order->GetBuffer());
   // remember current button states for future comparison
   previous_buttons = std::vector<int>(joy->buttons);
 }

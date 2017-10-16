@@ -61,6 +61,8 @@ public:
   void SetRxStateSize(int);
   void SetTxStateSize(int);
 
+  void SetCommsLink(Ptr<ICommsLink> comms);
+
 private:
   void _UpdateRxStateSize(int);
   void _UpdateTxStateSize(int);

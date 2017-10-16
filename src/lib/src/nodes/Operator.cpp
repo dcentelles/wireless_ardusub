@@ -147,6 +147,8 @@ void Operator::SetStateReceivedCallback(f_notification _callback) {
   stateReceivedCallback = _callback;
 }
 
+void Operator::SetCommsLink(Ptr<ICommsLink> comms) { _comms = comms; }
+
 void Operator::Start() {
   txdlf = CreateObject<SimplePacket>(100, dlfcrctype);
   rxdlf = CreateObject<SimplePacket>(100, dlfcrctype);
@@ -265,7 +267,9 @@ void Operator::_SendPacketWithDesiredState() {
       txstatemutex.unlock();
 
       txdlf->UpdateFCS();
+      Log->info("Sending packet with current desired state...");
       *_comms << txdlf;
+      std::this_thread::sleep_for(chrono::milliseconds(1000));
       while (_comms->BusyTransmitting())
         ;
     } else
