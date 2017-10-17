@@ -15,6 +15,7 @@
 #include <sensor_msgs/Joy.h>
 #include <vector>
 #include <wireless_ardusub/HROVMessage.h>
+#include <wireless_ardusub/HROVSettings.h>
 #include <wireless_ardusub/TeleopOrder.h>
 #include <wireless_ardusub/nodes/Operator.h>
 #include <wireless_ardusub/wireless_teleop_joyConfig.h>
@@ -22,9 +23,9 @@
 using namespace cpplogging;
 using namespace wireless_ardusub;
 
-class TeleopJoy : public Logger {
+class Teleop : public Logger {
 public:
-  TeleopJoy(Ptr<ICommsLink> stream);
+  Teleop(Ptr<ICommsLink> stream);
   void spin();
 
 private:
@@ -40,6 +41,7 @@ private:
   void joyCallback(const sensor_msgs::Joy::ConstPtr &joy);
 
   TeleopOrderPtr order;
+  Ptr<HROVSettings> settings;
   // state transmitter
   Ptr<Operator> sender;
   // node handle
@@ -72,16 +74,16 @@ private:
   std::vector<int> previous_buttons;
 };
 
-TeleopJoy::TeleopJoy(Ptr<ICommsLink> stream) {
+Teleop::Teleop(Ptr<ICommsLink> stream) {
   // connect dynamic reconfigure
   dynamic_reconfigure::Server<
       wireless_ardusub::wireless_teleop_joyConfig>::CallbackType f;
-  f = boost::bind(&TeleopJoy::configCallback, this, _1, _2);
+  f = boost::bind(&Teleop::configCallback, this, _1, _2);
   server.setCallback(f);
 
   // connects subs and pubs
   joy_sub =
-      nh.subscribe<sensor_msgs::Joy>("joy", 1, &TeleopJoy::joyCallback, this);
+      nh.subscribe<sensor_msgs::Joy>("joy", 1, &Teleop::joyCallback, this);
 
   // initialize state variables
   camera_tilt = 1500;
@@ -94,18 +96,20 @@ TeleopJoy::TeleopJoy(Ptr<ICommsLink> stream) {
   sender->SetLogLevel(LogLevel::info);
   sender->SetMaxImageTrunkLength(50);
   sender->SetRxStateSize(HROVMessage::MessageLength);
-  sender->SetTxStateSize(TeleopOrder::Size);
+  sender->SetTxStateSize(TeleopOrder::Size + HROVSettings::SettingsSize);
   sender->SetImageReceivedCallback([this](Operator &op) {
     char msg[500];
     op.GetLastReceivedImage(msg);
     Log->info("New Image received!: {}", msg);
   });
+
+  settings = HROVSettings::BuildHROVSettings();
   order = TeleopOrder::Build();
 
   sender->Start();
 }
 
-void TeleopJoy::spin() {
+void Teleop::spin() {
   ros::Rate loop(config.pub_rate);
 
   while (ros::ok()) {
@@ -117,17 +121,17 @@ void TeleopJoy::spin() {
   }
 }
 
-void TeleopJoy::configCallback(
-    wireless_ardusub::wireless_teleop_joyConfig &update, uint32_t level) {
+void Teleop::configCallback(wireless_ardusub::wireless_teleop_joyConfig &update,
+                            uint32_t level) {
   ROS_INFO("reconfigure request received");
   config = update;
 }
 
-bool TeleopJoy::risingEdge(const sensor_msgs::Joy::ConstPtr &joy, int index) {
+bool Teleop::risingEdge(const sensor_msgs::Joy::ConstPtr &joy, int index) {
   return (joy->buttons[index] == 1 && previous_buttons[index] == 0);
 }
 
-void TeleopJoy::setArming(bool arm) {
+void Teleop::setArming(bool arm) {
   // Arm/disarm method following:
   // https://github.com/mavlink/qgroundcontrol/issues/590
   // https://pixhawk.ethz.ch/mavlink/#MAV_CMD_COMPONENT_ARM_DISARM
@@ -142,7 +146,7 @@ void TeleopJoy::setArming(bool arm) {
   }
 }
 
-void TeleopJoy::cmdTakeoffLand(bool takeoff) {
+void Teleop::cmdTakeoffLand(bool takeoff) {
   // https://pixhawk.ethz.ch/mavlink/#MAV_CMD_NAV_LAND_LOCAL
   if (takeoff) {
     Debug("takeoff");
@@ -151,8 +155,8 @@ void TeleopJoy::cmdTakeoffLand(bool takeoff) {
   }
 }
 
-int8_t TeleopJoy::computeAxisValue(const sensor_msgs::Joy::ConstPtr &joy,
-                                   int index) {
+int8_t Teleop::computeAxisValue(const sensor_msgs::Joy::ConstPtr &joy,
+                                int index) {
   // return 0 if axis index is invalid
   if (index < 0 || index >= joy->axes.size()) {
     return 0.0;
@@ -165,7 +169,7 @@ int8_t TeleopJoy::computeAxisValue(const sensor_msgs::Joy::ConstPtr &joy,
   return value;
 }
 
-void TeleopJoy::joyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
+void Teleop::joyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
   // init previous_buttons
   if (previous_buttons.size() != joy->buttons.size()) {
     previous_buttons = std::vector<int>(joy->buttons);
@@ -215,7 +219,13 @@ void TeleopJoy::joyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
             order->GetX(), order->GetY(), order->GetZ(), order->GetR(),
             order->Arm() ? "true" : "false", modeName);
 
-  sender->SetDesiredState(order->GetBuffer());
+  uint8_t state[TeleopOrder::Size + HROVSettings::SettingsSize];
+  uint8_t *orderPtr = state;
+  uint8_t *settingsPtr = orderPtr + TeleopOrder::Size;
+  memcpy(orderPtr, order->GetBuffer(), TeleopOrder::Size);
+  memcpy(settingsPtr, settings->GetBuffer(), HROVSettings::SettingsSize);
+
+  sender->SetDesiredState(state);
   // remember current button states for future comparison
   previous_buttons = std::vector<int>(joy->buttons);
 }
@@ -265,8 +275,8 @@ int main(int argc, char **argv) {
       params.serialPort, SerialPortStream::BAUD_2400);
   stream->Open();
 
-  TeleopJoy teleop_joy(stream);
+  Teleop teleop(stream);
 
-  teleop_joy.spin();
+  teleop.spin();
   return 0;
 }

@@ -49,7 +49,7 @@ Operator::Operator(Ptr<ICommsLink> comms) : txservice(this), rxservice(this) {
   stateReceivedCallback = &defaultStateReceivedCallback;
 
   _comms->SetLogName("Operator:Comms");
-  SetLogName("ROVOperator");
+  SetLogName("Operator");
 
   desiredStateSet = false;
 }
@@ -195,9 +195,14 @@ void Operator::_WaitForCurrentStateAndNextImageTrunk(int timeout) {
   // Wait for the next packet and call the callback
   Log->debug("RX: waiting for frames...");
   *_comms >> rxdlf;
-  _UpdateLastConfirmedStateFromLastMsg();
-  _UpdateImgBufferFromLastMsg();
-  stateReceivedCallback(*this);
+  if (rxdlf->PacketIsOk()) {
+    Log->info("Packet received ({} bytes)", rxdlf->GetPacketSize());
+    _UpdateLastConfirmedStateFromLastMsg();
+    _UpdateImgBufferFromLastMsg();
+    stateReceivedCallback(*this);
+  } else {
+    Log->warn("Packet received with errors ({} bytes)", rxdlf->GetPacketSize());
+  }
 }
 
 void Operator::_UpdateImgBufferFromLastMsg() {
@@ -278,7 +283,7 @@ void Operator::_SendPacketWithDesiredState() {
       txstatemutex.unlock();
 
       txdlf->UpdateFCS();
-      Log->info("Sending packet with current desired state...");
+      Log->info("Sending packet ({} bytes)", txdlf->GetPacketSize());
       *_comms << txdlf;
       while (_comms->BusyTransmitting())
         ;

@@ -171,11 +171,16 @@ void ROV::Start() {
 
 void ROV::_WaitForNewOrders() {
   *_comms >> _rxdlf;
-  _UpdateCurrentRxStateFromRxState();
-  _ordersReceivedCallback(*this);
+  if (_rxdlf->PacketIsOk()) {
+    Log->info("Packet received ({} bytes)", _rxdlf->GetPacketSize());
+    _UpdateCurrentRxStateFromRxState();
+    _ordersReceivedCallback(*this);
+  } else {
+    Log->warn("Packet received with errors ({} bytes)",
+              _rxdlf->GetPacketSize());
+  }
 }
 void ROV::_Work() {
-  Log->debug("waiting for new orders...");
   _WaitForNewOrders();
   _immutex.lock();
   _SendPacketWithCurrentStateAndImgTrunk();
@@ -249,6 +254,7 @@ void ROV::_SendPacketWithCurrentStateAndImgTrunk() {
       *_imgTrunkInfoPtr = 0;
       _txdlf->UpdateFCS();
     }
+    Log->info("Sending packet ({} bytes)", _txdlf->GetPacketSize());
     *_comms << _txdlf;
   } else {
     Log->warn("TX: current state is not set yet");

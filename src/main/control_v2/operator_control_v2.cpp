@@ -21,9 +21,9 @@ using namespace cpplogging;
 using namespace dcauv;
 using namespace wireless_ardusub;
 
-class TeleopJoy : public Logger {
+class Teleop : public Logger {
 public:
-  TeleopJoy();
+  Teleop();
   void spin();
 
 private:
@@ -71,16 +71,16 @@ private:
   std::vector<int> previous_buttons;
 };
 
-TeleopJoy::TeleopJoy() {
+Teleop::Teleop() {
   // connect dynamic reconfigure
   dynamic_reconfigure::Server<
       wireless_ardusub::wireless_teleop_joyConfig>::CallbackType f;
-  f = boost::bind(&TeleopJoy::configCallback, this, _1, _2);
+  f = boost::bind(&Teleop::configCallback, this, _1, _2);
   server.setCallback(f);
 
   // connects subs and pubs
   joy_sub =
-      nh.subscribe<sensor_msgs::Joy>("joy", 1, &TeleopJoy::joyCallback, this);
+      nh.subscribe<sensor_msgs::Joy>("joy", 1, &Teleop::joyCallback, this);
 
   // initialize state variables
   camera_tilt = 1500;
@@ -94,7 +94,7 @@ TeleopJoy::TeleopJoy() {
   order = TeleopOrder::Build();
 }
 
-void TeleopJoy::spin() {
+void Teleop::spin() {
   ros::Rate loop(config.pub_rate);
 
   while (ros::ok()) {
@@ -106,17 +106,17 @@ void TeleopJoy::spin() {
   }
 }
 
-void TeleopJoy::configCallback(
+void Teleop::configCallback(
     wireless_ardusub::wireless_teleop_joyConfig &update, uint32_t level) {
   ROS_INFO("reconfigure request received");
   config = update;
 }
 
-bool TeleopJoy::risingEdge(const sensor_msgs::Joy::ConstPtr &joy, int index) {
+bool Teleop::risingEdge(const sensor_msgs::Joy::ConstPtr &joy, int index) {
   return (joy->buttons[index] == 1 && previous_buttons[index] == 0);
 }
 
-void TeleopJoy::setArming(bool arm) {
+void Teleop::setArming(bool arm) {
   // Arm/disarm method following:
   // https://github.com/mavlink/qgroundcontrol/issues/590
   // https://pixhawk.ethz.ch/mavlink/#MAV_CMD_COMPONENT_ARM_DISARM
@@ -131,7 +131,7 @@ void TeleopJoy::setArming(bool arm) {
   }
 }
 
-void TeleopJoy::cmdTakeoffLand(bool takeoff) {
+void Teleop::cmdTakeoffLand(bool takeoff) {
   // https://pixhawk.ethz.ch/mavlink/#MAV_CMD_NAV_LAND_LOCAL
   if (takeoff) {
     Debug("takeoff");
@@ -140,7 +140,7 @@ void TeleopJoy::cmdTakeoffLand(bool takeoff) {
   }
 }
 
-int8_t TeleopJoy::computeAxisValue(const sensor_msgs::Joy::ConstPtr &joy,
+int8_t Teleop::computeAxisValue(const sensor_msgs::Joy::ConstPtr &joy,
                                    int index) {
   // return 0 if axis index is invalid
   if (index < 0 || index >= joy->axes.size()) {
@@ -154,7 +154,7 @@ int8_t TeleopJoy::computeAxisValue(const sensor_msgs::Joy::ConstPtr &joy,
   return value;
 }
 
-void TeleopJoy::joyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
+void Teleop::joyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
   // init previous_buttons
   if (previous_buttons.size() != joy->buttons.size()) {
     previous_buttons = std::vector<int>(joy->buttons);
@@ -210,7 +210,7 @@ void TeleopJoy::joyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
 
 int main(int argc, char **argv) {
   ros::init(argc, argv, "wireless_teleop_joy");
-  TeleopJoy teleop_joy;
+  Teleop teleop_joy;
   teleop_joy.spin();
   return 0;
 }

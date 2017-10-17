@@ -12,6 +12,7 @@
 #include <dccomms_utils/S100Stream.h>
 #include <mavlink_cpp/mavlink_cpp.h>
 #include <wireless_ardusub/HROVMessage.h>
+#include <wireless_ardusub/HROVSettings.h>
 #include <wireless_ardusub/TeleopOrder.h>
 #include <wireless_ardusub/nodes/ROV.h>
 
@@ -95,7 +96,7 @@ int main(int argc, char **argv) {
   commsNode->SetOrdersReceivedCallback(
       [order, control](ROV &receiver) { Log->Info("Orders received!"); });
   commsNode->SetLogLevel(LogLevel::info);
-  commsNode->SetRxStateSize(TeleopOrder::Size);
+  commsNode->SetRxStateSize(TeleopOrder::Size + HROVSettings::SettingsSize);
   commsNode->SetTxStateSize(HROVMessage::MessageLength);
   commsNode->SetMaxImageTrunkLength(50);
   commsNode->Start();
