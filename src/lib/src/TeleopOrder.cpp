@@ -54,4 +54,9 @@ void TeleopOrder::SetFlyMode(FLY_MODE mode) {
   *_flags0 &= ~FLY_MODE_MASK;
   *_flags0 |= mode;
 }
+
+void TeleopOrder::BuildFromBuffer(void *buffer) {
+  memcpy(_buffer, buffer, Size);
+  _Init();
+}
 }

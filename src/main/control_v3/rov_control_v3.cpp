@@ -31,6 +31,42 @@ struct Params {
 
 static LoggerPtr Log;
 static Params params;
+static auto lastOrder = TeleopOrder::Build();
+static auto lastSettings = HROVSettings::BuildHROVSettings();
+static uint16_t localPort = 14550;
+static mavlink_cpp::Ptr<GCS> control =
+    mavlink_cpp::CreateObject<GCS>(localPort);
+
+static bool currentOperatorMessage_updated;
+static std::mutex currentOperatorMessage_mutex;
+static std::condition_variable currentOperatorMessage_cond;
+
+static std::thread operatorMsgParserWorker;
+
+void operatorMsgParserWork() {
+  while (1) {
+    std::unique_lock<std::mutex> lock(currentOperatorMessage_mutex);
+    while (!currentOperatorMessage_updated) {
+      currentOperatorMessage_cond.wait(lock);
+    }
+
+    Log->Info("Last orders:\n"
+              "\tx: {}\n"
+              "\ty: {}\n"
+              "\tz: {}\n"
+              "\tr: {}\n",
+              lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
+              lastOrder->GetR());
+    currentOperatorMessage_updated = false;
+  }
+}
+
+void startOperatorMsgParserWorker() {
+  operatorMsgParserWorker = std::thread(operatorMsgParserWork);
+}
+
+void initROSInterface(ros::NodeHandle &nh, int argc, char **argv,
+                      dccomms::Ptr<ROV> commsNode) {}
 
 int GetParams(ros::NodeHandle &nh) {
   std::string serialPort;
@@ -60,10 +96,6 @@ int GetParams(ros::NodeHandle &nh) {
 
   return 0;
 }
-
-void initROSInterface(ros::NodeHandle &nh, int argc, char **argv,
-                      dccomms::Ptr<ROV> commsNode) {}
-
 int main(int argc, char **argv) {
   Log = CreateLogger("TeleopROV");
   Log->Info("Init");
@@ -78,23 +110,33 @@ int main(int argc, char **argv) {
   Log->SetLogLevel(cpplogging::LogLevel::debug);
   Log->FlushLogOn(cpplogging::LogLevel::info);
 
-  TeleopOrderPtr order = TeleopOrder::Build();
-
-  uint16_t localPort = 14550;
-  mavlink_cpp::Ptr<GCS> control = mavlink_cpp::CreateObject<GCS>(localPort);
   control->SetLogName("GCS");
   control->SetLogLevel(info);
   control->Start();
 
   Log->SetLogLevel(LogLevel::info);
 
+  startOperatorMsgParserWorker();
+
   auto stream = dccomms::CreateObject<dccomms_utils::S100Stream>(
       params.serialPort, SerialPortStream::BAUD_2400);
   stream->Open();
 
   dccomms::Ptr<ROV> commsNode = dccomms::CreateObject<ROV>(stream);
-  commsNode->SetOrdersReceivedCallback(
-      [order, control](ROV &receiver) { Log->Info("Orders received!"); });
+  commsNode->SetOrdersReceivedCallback([](ROV &receiver) {
+    Log->Info("Orders received!");
+    uint8_t state[TeleopOrder::Size + HROVSettings::SettingsSize];
+    receiver.GetCurrentRxState(state);
+    uint8_t *orderPtr = state;
+    uint8_t *settingsPtr = orderPtr + TeleopOrder::Size;
+
+    currentOperatorMessage_mutex.lock();
+    lastOrder->BuildFromBuffer(orderPtr);
+    lastSettings->UpdateFromBuffer(settingsPtr);
+    currentOperatorMessage_mutex.unlock();
+    currentOperatorMessage_updated = true;
+    currentOperatorMessage_cond.notify_one();
+  });
   commsNode->SetLogLevel(LogLevel::info);
   commsNode->SetRxStateSize(TeleopOrder::Size + HROVSettings::SettingsSize);
   commsNode->SetTxStateSize(HROVMessage::MessageLength);

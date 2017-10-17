@@ -180,10 +180,10 @@ void Operator::_Work() {}
 
 void Operator::_TxWork() {
   while (!desiredStateSet) {
-    std::this_thread::sleep_for(chrono::milliseconds(1000));
+    std::this_thread::sleep_for(chrono::milliseconds(750));
   }
   _SendPacketWithDesiredState();
-  std::this_thread::sleep_for(chrono::milliseconds(750));
+  std::this_thread::sleep_for(chrono::milliseconds(1000));
 }
 
 void Operator::_RxWork() {
