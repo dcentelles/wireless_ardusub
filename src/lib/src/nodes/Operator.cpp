@@ -149,14 +149,15 @@ void Operator::SetStateReceivedCallback(f_notification _callback) {
 }
 
 void Operator::Start() {
-  txdlf = CreateObject<SimplePacket>(100, dlfcrctype);
-  rxdlf = CreateObject<SimplePacket>(100, dlfcrctype);
+  txdlf = CreateObject<SimplePacket>(txStateLength, dlfcrctype);
+  rxdlf = CreateObject<SimplePacket>(
+      rxStateLength + imgTrunkInfoLength + maxImgTrunkLength, dlfcrctype);
 
   auto txdlbuffer = txdlf->GetPayloadBuffer();
   auto rxdlbuffer = rxdlf->GetPayloadBuffer();
 
   txbuffer = txdlf->GetPayloadBuffer();
-  rxbuffer = txdlf->GetPayloadBuffer();
+  rxbuffer = rxdlf->GetPayloadBuffer();
 
   txStatePtr = txbuffer;
   rxStatePtr = rxbuffer;
@@ -173,8 +174,11 @@ void Operator::Start() {
 void Operator::_Work() {}
 
 void Operator::_TxWork() {
+  while (!desiredStateSet) {
+    std::this_thread::sleep_for(chrono::milliseconds(1000));
+  }
   _SendPacketWithDesiredState();
-  std::this_thread::sleep_for(chrono::milliseconds(1000));
+  std::this_thread::sleep_for(chrono::milliseconds(800));
 }
 
 void Operator::_RxWork() {
@@ -236,7 +240,7 @@ void Operator::_LastTrunkReceived(uint16_t trunkSize) {
   int blockSize = currentImgPtr - beginImgPtr;
 
   currentImgPtr = beginImgPtr;
-  uint32_t crc = Checksum::crc32(beginImgPtr, blockSize);
+  uint16_t crc = Checksum::crc16(beginImgPtr, blockSize);
   if (crc == 0) {
     immutex.lock();
     lastImgSize = blockSize - IMG_CHKSUM_SIZE;

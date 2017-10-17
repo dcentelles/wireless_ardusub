@@ -9,7 +9,9 @@
 
 #include <chrono>
 #include <cpplogging/cpplogging.h>
+#include <dccomms_utils/S100Stream.h>
 #include <mavlink_cpp/mavlink_cpp.h>
+#include <wireless_ardusub/HROVMessage.h>
 #include <wireless_ardusub/TeleopOrder.h>
 #include <wireless_ardusub/nodes/ROV.h>
 
@@ -22,35 +24,22 @@ using namespace mavlink_cpp;
 using namespace std;
 
 struct Params {
-  std::string cameraTopic, masterUri;
+  std::string serialPort, masterUri;
   bool log2Console;
-};
-
-struct ProtocolConfig {
-  unsigned int width;
-  unsigned int height;
-  unsigned int frameSize;
-  ProtocolConfig() {
-    width = 352;
-    height = 288;
-    frameSize = 100;
-  }
 };
 
 static LoggerPtr Log;
 static Params params;
-static ProtocolConfig pconfig;
-static std::mutex config_mutex;
 
 int GetParams(ros::NodeHandle &nh) {
-  std::string cameraTopic;
-  if (!nh.getParam("image", cameraTopic)) {
-    ROS_ERROR("Failed to get param image");
+  std::string serialPort;
+  if (!nh.getParam("port", serialPort)) {
+    ROS_ERROR("Failed to get param port");
     return 1;
   } else {
-    ROS_INFO("camera topic: %s", cameraTopic.c_str());
+    ROS_INFO("port topic: %s", serialPort.c_str());
   }
-  params.cameraTopic = cameraTopic;
+  params.serialPort = serialPort;
 
   char *cmasterUri = getenv("ROS_MASTER_URI");
   std::string masterUri = cmasterUri;
@@ -90,18 +79,29 @@ int main(int argc, char **argv) {
 
   TeleopOrderPtr order = TeleopOrder::Build();
 
-  dccomms::Ptr<ROV> commsNode;
   uint16_t localPort = 14550;
   mavlink_cpp::Ptr<GCS> control = mavlink_cpp::CreateObject<GCS>(localPort);
   control->SetLogName("GCS");
-  control->SetLogLevel(debug);
+  control->SetLogLevel(info);
   control->Start();
 
-  commsNode->SetOrdersReceivedCallback([order, control](ROV &receiver) {});
-
   Log->SetLogLevel(LogLevel::info);
+
+  auto stream = dccomms::CreateObject<dccomms_utils::S100Stream>(
+      params.serialPort, SerialPortStream::BAUD_2400);
+  stream->Open();
+
+  dccomms::Ptr<ROV> commsNode = dccomms::CreateObject<ROV>(stream);
+  commsNode->SetOrdersReceivedCallback(
+      [order, control](ROV &receiver) { Log->Info("Orders received!"); });
   commsNode->SetLogLevel(LogLevel::info);
+  commsNode->SetRxStateSize(TeleopOrder::Size);
+  commsNode->SetTxStateSize(HROVMessage::MessageLength);
+  commsNode->SetMaxImageTrunkLength(50);
   commsNode->Start();
+
+  auto cstate = dccomms::CreateObject<HROVMessage>();
+  commsNode->SetCurrentTxState(cstate->GetBuffer());
 
   try {
 
@@ -110,11 +110,20 @@ int main(int argc, char **argv) {
 
     while (ros::ok()) {
       if (!commsNode->SendingCurrentImage()) {
-        config_mutex.lock(); // At the moment, only the compression parameters
-                             // will be dynamic
+        std::string msg =
+            "En un lugar de la Mancha, de cuyo nombre no quiero"
+            " acordarme, no ha mucho tiempo que vivía un hidalgo de l"
+            "os de lanza en astillero, adarga antigua, rocín flaco y galg"
+            "o corredor. Una olla de algo más vaca que carnero, salpicón las "
+            "más"
+            " noches, duelos y quebrantos los sábados, lentejas los viernes, "
+            "algún pa"
+            "lomino de añadidura los domingos, consumían las tres partes de su "
+            "hacien"
+            "da. El resto della concluían ";
 
-        Log->Info("Sending the new captured image...");
-        config_mutex.unlock();
+        Log->Info("Sending the new captured image... ({} bytes)", msg.length());
+        commsNode->SendImage((void *)msg.c_str(), msg.length());
       }
       ros::spinOnce();
       rate.sleep();

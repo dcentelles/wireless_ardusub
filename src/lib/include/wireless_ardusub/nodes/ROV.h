@@ -25,7 +25,7 @@ class ROV : public Loggable {
 public:
   static const int IMG_TRUNK_INFO_SIZE = 2, IMG_FIRST_TRUNK_FLAG = 0x8000,
                    IMG_LAST_TRUNK_FLAG = 0x4000, MAX_IMG_SIZE = 16383,
-                   MAX_IMG_TRUNK_LENGTH = 40, MAX_IMG_STATE_LENGTH = 40,
+                   MAX_IMG_TRUNK_LENGTH = 100, MAX_IMG_STATE_LENGTH = 40,
                    IMG_CHKSUM_SIZE = 2, MAX_PACKET_LENGTH = 2048;
 
   ROV(Ptr<ICommsLink> _comms);
@@ -58,7 +58,7 @@ public:
   void SetTxStateSize(int);
 
 private:
-  void _WaitForNewOrders(int millis_timeout);
+  void _WaitForNewOrders();
   void _SendPacketWithCurrentStateAndImgTrunk();
   void _CheckIfEntireImgIsSent();
 

@@ -24,7 +24,7 @@ using namespace wireless_ardusub;
 
 class TeleopJoy : public Logger {
 public:
-  TeleopJoy();
+  TeleopJoy(Ptr<ICommsLink> stream);
   void spin();
 
 private:
@@ -72,7 +72,7 @@ private:
   std::vector<int> previous_buttons;
 };
 
-TeleopJoy::TeleopJoy() {
+TeleopJoy::TeleopJoy(Ptr<ICommsLink> stream) {
   // connect dynamic reconfigure
   dynamic_reconfigure::Server<
       wireless_ardusub::wireless_teleop_joyConfig>::CallbackType f;
@@ -90,14 +90,16 @@ TeleopJoy::TeleopJoy() {
   SetLogName("TeleopJoy");
   Log->info("Sender initialized");
 
-  auto stream = CreateObject<dccomms_utils::S100Stream>(
-      "/dev/ttyUSB0", SerialPortStream::BAUD_2400, 2000);
-  stream->Open();
-
   sender = CreateObject<Operator>(stream);
   sender->SetLogLevel(LogLevel::info);
+  sender->SetMaxImageTrunkLength(50);
   sender->SetRxStateSize(HROVMessage::MessageLength);
   sender->SetTxStateSize(TeleopOrder::Size);
+  sender->SetImageReceivedCallback([this](Operator &op) {
+    char msg[500];
+    op.GetLastReceivedImage(msg);
+    Log->info("New Image received!: {}", msg);
+  });
   order = TeleopOrder::Build();
 
   sender->Start();
@@ -212,14 +214,59 @@ void TeleopJoy::joyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
   Log->info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
             order->GetX(), order->GetY(), order->GetZ(), order->GetR(),
             order->Arm() ? "true" : "false", modeName);
+
   sender->SetDesiredState(order->GetBuffer());
   // remember current button states for future comparison
   previous_buttons = std::vector<int>(joy->buttons);
 }
 
+struct Params {
+  std::string serialPort, masterUri;
+  bool log2Console;
+};
+
+static Params params;
+
+int GetParams(ros::NodeHandle &nh) {
+  std::string serialPort;
+  if (!nh.getParam("port", serialPort)) {
+    ROS_ERROR("Failed to get param port");
+    return 1;
+  } else {
+    ROS_INFO("port topic: %s", serialPort.c_str());
+  }
+  params.serialPort = serialPort;
+
+  char *cmasterUri = getenv("ROS_MASTER_URI");
+  std::string masterUri = cmasterUri;
+  ROS_INFO("ROS MASTER URI: %s", masterUri.c_str());
+
+  params.masterUri = masterUri;
+
+  bool log2Console;
+  if (!nh.getParam("log2Console", log2Console)) {
+    ROS_ERROR("Failed to get param log2Console");
+    return 1;
+  } else {
+    ROS_INFO("log2Console: %d", log2Console);
+  }
+
+  params.log2Console = log2Console;
+
+  return 0;
+}
+
 int main(int argc, char **argv) {
-  ros::init(argc, argv, "wireless_teleop_joy");
-  TeleopJoy teleop_joy;
+  ros::init(argc, argv, "operator_control_v3");
+
+  ros::NodeHandle nh("~");
+  GetParams(nh);
+  auto stream = CreateObject<dccomms_utils::S100Stream>(
+      params.serialPort, SerialPortStream::BAUD_2400);
+  stream->Open();
+
+  TeleopJoy teleop_joy(stream);
+
   teleop_joy.spin();
   return 0;
 }

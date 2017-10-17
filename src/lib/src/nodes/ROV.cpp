@@ -112,7 +112,7 @@ void ROV::SendImage(void *_buf, unsigned int _length) {
   _endImgPtr = ((uint8_t *)_imgChksumPtr) + IMG_CHKSUM_SIZE;
   _currentImgPtr = _beginImgPtr;
 
-  uint32_t imgChksum = Checksum::crc32(_beginImgPtr, _length);
+  uint16_t imgChksum = Checksum::crc16(_beginImgPtr, _length);
   if (_bigEndian) {
     *_imgChksumPtr = imgChksum;
   } else {
@@ -120,7 +120,7 @@ void ROV::SendImage(void *_buf, unsigned int _length) {
   }
 
   // TEMPORAL CHECK
-  uint32_t crc = Checksum::crc32(_beginImgPtr, _length + IMG_CHKSUM_SIZE);
+  uint32_t crc = Checksum::crc16(_beginImgPtr, _length + IMG_CHKSUM_SIZE);
   if (crc != 0) {
     Log->critical("data link frame with errors before transmission");
   }
@@ -147,8 +147,9 @@ void ROV::SetOrdersReceivedCallback(f_notification _callback) {
 bool ROV::SendingCurrentImage() { return _imgInBuffer; }
 
 void ROV::Start() {
-  _txdlf = CreateObject<SimplePacket>(100, _dlfcrctype);
-  _rxdlf = CreateObject<SimplePacket>(100, _dlfcrctype);
+  _txdlf = CreateObject<SimplePacket>(
+      _txStateLength + _imgTrunkInfoLength + _maxImgTrunkLength, _dlfcrctype);
+  _rxdlf = CreateObject<SimplePacket>(_rxStateLength, _dlfcrctype);
 
   _txbuffer = _txdlf->GetPayloadBuffer();
   _rxbuffer = _rxdlf->GetPayloadBuffer();
@@ -165,7 +166,19 @@ void ROV::Start() {
   _service.Start();
 }
 
-void ROV::_Work() {}
+void ROV::_WaitForNewOrders() {
+  *_comms >> _rxdlf;
+  _UpdateCurrentRxStateFromRxState();
+  _ordersReceivedCallback(*this);
+}
+void ROV::_Work() {
+  Log->debug("waiting for new orders...");
+  _WaitForNewOrders();
+  _immutex.lock();
+  _SendPacketWithCurrentStateAndImgTrunk();
+  _CheckIfEntireImgIsSent();
+  _immutex.unlock();
+}
 
 void ROV::_UpdateCurrentRxStateFromRxState() {
   _rxstatemutex.lock();
