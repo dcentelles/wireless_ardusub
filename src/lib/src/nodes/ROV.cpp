@@ -23,14 +23,14 @@ ROV::ROV(Ptr<ICommsLink> comms) : _service(this) {
   // TODO Auto-generated constructor stub
   _comms = comms;
   _SetEndianess();
-  _rxStateLength = MAX_IMG_STATE_LENGTH;
-  _txStateLength = MAX_IMG_STATE_LENGTH;
+  _rxStateLength = MAX_NODE_STATE_LENGTH;
+  _txStateLength = MAX_NODE_STATE_LENGTH;
   _imgTrunkInfoLength = IMG_TRUNK_INFO_SIZE;
   _maxImgTrunkLength = MAX_IMG_TRUNK_LENGTH;
   _maxPacketLength = MAX_PACKET_LENGTH;
 
   _dlfcrctype = CRC16;
-  _buffer = new uint8_t[_maxPacketLength + MAX_IMG_STATE_LENGTH * 2 +
+  _buffer = new uint8_t[_maxPacketLength + MAX_NODE_STATE_LENGTH * 2 +
                         MAX_IMG_SIZE]; // buffer max size is orientative...
   _currentRxState = _buffer;
   _currentTxState = _currentRxState + _rxStateLength;
@@ -52,16 +52,19 @@ ROV::~ROV() {
 }
 
 void ROV::SetMaxImageTrunkLength(int _len) {
+  _len = _len <= MAX_IMG_TRUNK_LENGTH ? _len : MAX_IMG_TRUNK_LENGTH;
   _maxImgTrunkLength = _len;
   Log->debug("Set a new maximum image trunk length: {} bytes", _len);
 }
 
 void ROV::SetTxStateSize(int _len) {
+  _len = _len <= MAX_NODE_STATE_LENGTH ? _len : MAX_NODE_STATE_LENGTH;
   _txStateLength = _len;
   _beginImgPtr = _currentTxState + _txStateLength;
   Log->debug("Set a new Tx-State length: {} bytes", _len);
 }
 void ROV::SetRxStateSize(int _len) {
+  _len = _len <= MAX_NODE_STATE_LENGTH ? _len : MAX_NODE_STATE_LENGTH;
   _rxStateLength = _len;
   _currentTxState = _currentRxState + _rxStateLength;
   SetTxStateSize(_txStateLength);

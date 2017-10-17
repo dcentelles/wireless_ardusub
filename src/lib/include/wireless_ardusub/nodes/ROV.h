@@ -14,20 +14,17 @@
 #include <functional>
 #include <iostream>
 #include <mutex>
+#include <wireless_ardusub/nodes/Constants.h>
 #include <wireless_ardusub/packets/SimplePacket.h>
 
 namespace wireless_ardusub {
 
 using namespace dccomms;
 using namespace cpplogging;
+using namespace teleop_v3;
 
 class ROV : public Loggable {
 public:
-  static const int IMG_TRUNK_INFO_SIZE = 2, IMG_FIRST_TRUNK_FLAG = 0x8000,
-                   IMG_LAST_TRUNK_FLAG = 0x4000, MAX_IMG_SIZE = 16383,
-                   MAX_IMG_TRUNK_LENGTH = 100, MAX_IMG_STATE_LENGTH = 40,
-                   IMG_CHKSUM_SIZE = 2, MAX_PACKET_LENGTH = 2048;
-
   ROV(Ptr<ICommsLink> _comms);
   virtual ~ROV();
   void SendImage(void *, unsigned int);

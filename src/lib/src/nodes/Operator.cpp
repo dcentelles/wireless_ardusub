@@ -37,8 +37,8 @@ Operator::Operator(Ptr<ICommsLink> comms) : txservice(this), rxservice(this) {
                        MAX_IMG_SIZE];
 
   currentRxState = buffer;
-  _UpdateRxStateSize(MAX_IMG_STATE_LENGTH);
-  _UpdateTxStateSize(MAX_IMG_STATE_LENGTH);
+  _UpdateRxStateSize(MAX_NODE_STATE_LENGTH);
+  _UpdateTxStateSize(MAX_NODE_STATE_LENGTH);
 
   lastImgSize = 0;
   imgInBuffer = false;
@@ -62,14 +62,19 @@ Operator::~Operator() {
   delete buffer;
 }
 
-void Operator::SetMaxImageTrunkLength(int _len) { maxImgTrunkLength = _len; }
+void Operator::SetMaxImageTrunkLength(int _len) {
+  _len = _len <= MAX_IMG_TRUNK_LENGTH ? _len : MAX_IMG_TRUNK_LENGTH;
+  maxImgTrunkLength = _len;
+}
 
 void Operator::SetRxStateSize(int _len) {
+  _len = _len <= MAX_NODE_STATE_LENGTH ? _len : MAX_NODE_STATE_LENGTH;
   _UpdateRxStateSize(_len);
   Log->debug("Set a new Rx-State length: {} bytes", _len);
 }
 
 void Operator::SetTxStateSize(int _len) {
+  _len = _len <= MAX_NODE_STATE_LENGTH ? _len : MAX_NODE_STATE_LENGTH;
   _UpdateTxStateSize(_len);
   Log->debug("Set a new Tx-State length: {} bytes", _len);
 }

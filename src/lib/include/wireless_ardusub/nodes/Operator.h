@@ -8,27 +8,23 @@
 #ifndef WIRELESS_ARDUSUB_OPERATOR_H_
 #define WIRELESS_ARDUSUB_OPERATOR_H_
 
+#include <cpplogging/Loggable.h>
 #include <dccomms/Utils.h>
 #include <functional>
 #include <iostream>
-#include <wireless_ardusub/packets/SimplePacket.h>
-
-#include <cpplogging/Loggable.h>
 #include <mutex>
+#include <wireless_ardusub/nodes/Constants.h>
+#include <wireless_ardusub/packets/SimplePacket.h>
 
 namespace wireless_ardusub {
 
 using namespace dccomms;
 using namespace cpplogging;
 using namespace std;
+using namespace teleop_v3;
 
 class Operator : public Loggable {
 public:
-  static const int IMG_TRUNK_INFO_SIZE = 2, IMG_FIRST_TRUNK_FLAG = 0x8000,
-                   IMG_LAST_TRUNK_FLAG = 0x4000, MAX_IMG_SIZE = 16383,
-                   MAX_IMG_TRUNK_LENGTH = 100, MAX_IMG_STATE_LENGTH = 40,
-                   IMG_CHKSUM_SIZE = 2, MAX_PACKET_LENGTH = 2048;
-
   Operator(Ptr<ICommsLink> comms);
   virtual ~Operator();
   void SetDesiredState(const void *data);
