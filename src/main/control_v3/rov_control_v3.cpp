@@ -57,6 +57,16 @@ void operatorMsgParserWork() {
               "\tr: {}\n",
               lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
               lastOrder->GetR());
+
+    Log->Info("Current image settings:\n"
+              "\t(x0,y0): ({},{})\n"
+              "\t(x1,y1): ({},{})\n)"
+              "\tsize: {} bytes"
+              "\tROI shift: {}",
+              lastSettings->GetROIX0(), lastSettings->GetROIY0(),
+              lastSettings->GetROIX1(), lastSettings->GetROIY1(),
+              lastSettings->GetImgSize(), lastSettings->GetROIShift());
+
     currentOperatorMessage_updated = false;
   }
 }

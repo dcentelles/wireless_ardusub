@@ -39,6 +39,13 @@ public:
 
   uint8_t *GetBuffer() { return buffer; }
 
+  inline uint16_t GetROIX0() { return _GetROIX0(); }
+  inline uint16_t GetROIY0() { return _GetROIY0(); }
+  inline uint16_t GetROIX1() { return _GetROIX1(); }
+  inline uint16_t GetROIY1() { return _GetROIY1(); }
+  inline uint8_t GetROIShift() { return _GetROIShift(); }
+  inline uint16_t GetImgSize() { return _GetImgSize(); }
+
 private:
   void _Init();
 
