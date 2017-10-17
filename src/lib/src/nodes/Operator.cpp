@@ -183,7 +183,7 @@ void Operator::_TxWork() {
     std::this_thread::sleep_for(chrono::milliseconds(1000));
   }
   _SendPacketWithDesiredState();
-  std::this_thread::sleep_for(chrono::milliseconds(800));
+  std::this_thread::sleep_for(chrono::milliseconds(750));
 }
 
 void Operator::_RxWork() {
