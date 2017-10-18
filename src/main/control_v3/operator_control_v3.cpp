@@ -11,12 +11,16 @@
 #include <cpplogging/cpplogging.h>
 #include <dccomms_utils/S100Stream.h>
 #include <dynamic_reconfigure/server.h>
+#include <image_utils_ros_msgs/EncodedImg.h>
+#include <merbots_whrov_msgs/hrov_settings.h>
+#include <merbots_whrov_msgs/position.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Joy.h>
 #include <vector>
 #include <wireless_ardusub/HROVMessage.h>
 #include <wireless_ardusub/HROVSettings.h>
 #include <wireless_ardusub/TeleopOrder.h>
+#include <wireless_ardusub/nodes/Constants.h>
 #include <wireless_ardusub/nodes/Operator.h>
 #include <wireless_ardusub/wireless_teleop_joyConfig.h>
 
@@ -39,6 +43,8 @@ private:
   void configCallback(wireless_ardusub::wireless_teleop_joyConfig &update,
                       uint32_t level);
   void joyCallback(const sensor_msgs::Joy::ConstPtr &joy);
+  void newSettingsReceived(
+      const merbots_whrov_msgs::hrov_settingsConstPtr &settings);
 
   TeleopOrderPtr order;
   Ptr<HROVSettings> settings;
@@ -46,6 +52,10 @@ private:
   Ptr<Operator> sender;
   // node handle
   ros::NodeHandle nh;
+
+  ros::Publisher currentHROVState_pub;
+  ros::Publisher encodedImage_pub;
+  ros::Subscriber currentSettings_sub;
 
   // dynamic reconfigure
   dynamic_reconfigure::Server<wireless_ardusub::wireless_teleop_joyConfig>
@@ -72,6 +82,7 @@ private:
   bool initLT;
   bool initRT;
   std::vector<int> previous_buttons;
+  std::vector<uint8_t> encodedImg;
 };
 
 Teleop::Teleop(Ptr<ICommsLink> stream) {
@@ -83,7 +94,7 @@ Teleop::Teleop(Ptr<ICommsLink> stream) {
 
   // connects subs and pubs
   joy_sub =
-      nh.subscribe<sensor_msgs::Joy>("joy", 1, &Teleop::joyCallback, this);
+      nh.subscribe<sensor_msgs::Joy>("/joy", 1, &Teleop::joyCallback, this);
 
   // initialize state variables
   camera_tilt = 1500;
@@ -92,12 +103,21 @@ Teleop::Teleop(Ptr<ICommsLink> stream) {
   SetLogName("TeleopJoy");
   Log->info("Sender initialized");
 
+  encodedImg.reserve(wireless_ardusub::teleop_v3::MAX_IMG_SIZE);
+
   sender = CreateObject<Operator>(stream);
   sender->SetLogLevel(LogLevel::info);
   sender->SetMaxImageTrunkLength(50);
   sender->SetRxStateSize(HROVMessage::MessageLength);
   sender->SetTxStateSize(TeleopOrder::Size + HROVSettings::SettingsSize);
   sender->SetImageReceivedCallback([this](Operator &op) {
+    int encodedImgSize;
+    encodedImgSize = op.GetLastReceivedImage(encodedImg.data());
+    encodedImg.resize(encodedImgSize);
+    Log->info("New Image received!");
+  });
+
+  sender->SetStateReceivedCallback([this](Operator &op) {
     char msg[500];
     op.GetLastReceivedImage(msg);
     Log->info("New Image received!: {}", msg);
@@ -107,6 +127,16 @@ Teleop::Teleop(Ptr<ICommsLink> stream) {
   order = TeleopOrder::Build();
 
   sender->Start();
+
+  currentHROVState_pub =
+      nh.advertise<merbots_whrov_msgs::position>("current_hrov_position", 1);
+
+  encodedImage_pub =
+      nh.advertise<image_utils_ros_msgs::EncodedImg>("encoded_image", 1);
+
+  currentSettings_sub = nh.subscribe<merbots_whrov_msgs::hrov_settings>(
+      "desired_hrov_settings", 1,
+      boost::bind(&Teleop::newSettingsReceived, this, _1)); //,
 }
 
 void Teleop::spin() {
@@ -119,6 +149,12 @@ void Teleop::spin() {
     // enforce a max publish rate
     loop.sleep();
   }
+}
+
+void Teleop::newSettingsReceived(
+    const merbots_whrov_msgs::hrov_settingsConstPtr &msg) {
+  Log->info("New settings received");
+  settings->SetFromROSMsg(msg);
 }
 
 void Teleop::configCallback(wireless_ardusub::wireless_teleop_joyConfig &update,
@@ -236,6 +272,7 @@ struct Params {
 };
 
 static Params params;
+static LoggerPtr Log;
 
 int GetParams(ros::NodeHandle &nh) {
   std::string serialPort;
@@ -243,13 +280,13 @@ int GetParams(ros::NodeHandle &nh) {
     ROS_ERROR("Failed to get param port");
     return 1;
   } else {
-    ROS_INFO("port topic: %s", serialPort.c_str());
+    Log->Info("port topic: {}", serialPort);
   }
   params.serialPort = serialPort;
 
   char *cmasterUri = getenv("ROS_MASTER_URI");
   std::string masterUri = cmasterUri;
-  ROS_INFO("ROS MASTER URI: %s", masterUri.c_str());
+  Log->Info("ROS MASTER URI: {}", masterUri);
 
   params.masterUri = masterUri;
 
@@ -258,7 +295,7 @@ int GetParams(ros::NodeHandle &nh) {
     ROS_ERROR("Failed to get param log2Console");
     return 1;
   } else {
-    ROS_INFO("log2Console: %d", log2Console);
+    Log->Info("log2Console: {}", log2Console);
   }
 
   params.log2Console = log2Console;
@@ -268,7 +305,9 @@ int GetParams(ros::NodeHandle &nh) {
 
 int main(int argc, char **argv) {
   ros::init(argc, argv, "operator_control_v3");
-
+  Log = CreateLogger("operator_control_v3:main");
+  Log->Info("Init");
+  Log->LogToConsole(params.log2Console);
   ros::NodeHandle nh("~");
   GetParams(nh);
   auto stream = CreateObject<dccomms_utils::S100Stream>(
@@ -276,6 +315,7 @@ int main(int argc, char **argv) {
   stream->Open();
 
   Teleop teleop(stream);
+  teleop.LogToConsole(params.log2Console);
 
   teleop.spin();
   return 0;

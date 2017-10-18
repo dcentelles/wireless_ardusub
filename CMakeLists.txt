@@ -59,6 +59,7 @@ find_package(catkin REQUIRED COMPONENTS
   mavros_msgs
   sensor_msgs
   dynamic_reconfigure
+  image_utils_ros_msgs
 )
 
 #find_package(catkin REQUIRED dynamic_reconfigure)
@@ -80,9 +81,9 @@ catkin_package(
     merbots_whrov_msgs
     visp_ros
     mavros_msgs
-  
+  image_utils_ros_msgs
     sensor_msgs
-  sensor_msgs  sensor_msgs
+  sensor_msgs
 )
 
 roslaunch_add_file_check(launch)

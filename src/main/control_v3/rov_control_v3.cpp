@@ -75,22 +75,22 @@ void startOperatorMsgParserWorker() {
   operatorMsgParserWorker = std::thread(operatorMsgParserWork);
 }
 
-void initROSInterface(ros::NodeHandle &nh, int argc, char **argv,
-                      dccomms::Ptr<ROV> commsNode) {}
+void initROSInterface(int argc, char **argv, dccomms::Ptr<ROV> commsNode) {}
 
-int GetParams(ros::NodeHandle &nh) {
+int GetParams() {
+  ros::NodeHandle nh("~");
   std::string serialPort;
   if (!nh.getParam("port", serialPort)) {
     ROS_ERROR("Failed to get param port");
     return 1;
   } else {
-    ROS_INFO("port topic: %s", serialPort.c_str());
+    Log->Info("port topic: {}", serialPort);
   }
   params.serialPort = serialPort;
 
   char *cmasterUri = getenv("ROS_MASTER_URI");
   std::string masterUri = cmasterUri;
-  ROS_INFO("ROS MASTER URI: %s", masterUri.c_str());
+  Log->Info("ROS MASTER URI: {}", masterUri);
 
   params.masterUri = masterUri;
 
@@ -99,7 +99,7 @@ int GetParams(ros::NodeHandle &nh) {
     ROS_ERROR("Failed to get param log2Console");
     return 1;
   } else {
-    ROS_INFO("log2Console: %d", log2Console);
+    Log->Info("log2Console: {}", log2Console);
   }
 
   params.log2Console = log2Console;
@@ -112,17 +112,18 @@ int main(int argc, char **argv) {
 
   //// GET PARAMS
   ros::init(argc, argv, "rov_control");
-  ros::NodeHandle nh("~");
 
-  if (GetParams(nh))
+  if (GetParams())
     return 1;
 
   Log->SetLogLevel(cpplogging::LogLevel::debug);
   Log->FlushLogOn(cpplogging::LogLevel::info);
+  Log->LogToConsole(params.log2Console);
 
   control->SetLogName("GCS");
   control->SetLogLevel(info);
   control->Start();
+  control->LogToConsole(params.log2Console);
 
   Log->SetLogLevel(LogLevel::info);
 
@@ -147,6 +148,8 @@ int main(int argc, char **argv) {
     currentOperatorMessage_updated = true;
     currentOperatorMessage_cond.notify_one();
   });
+
+  commsNode->LogToConsole(params.log2Console);
   commsNode->SetLogLevel(LogLevel::info);
   commsNode->SetRxStateSize(TeleopOrder::Size + HROVSettings::SettingsSize);
   commsNode->SetTxStateSize(HROVMessage::MessageLength);
@@ -159,7 +162,7 @@ int main(int argc, char **argv) {
   try {
 
     ros::Rate rate(30); // 30 hz
-    initROSInterface(nh, argc, argv, commsNode);
+    initROSInterface(argc, argv, commsNode);
 
     while (ros::ok()) {
       if (!commsNode->SendingCurrentImage()) {
