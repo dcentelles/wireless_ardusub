@@ -149,6 +149,10 @@ void ROV::SetOrdersReceivedCallback(f_notification _callback) {
 
 bool ROV::SendingCurrentImage() { return _imgInBuffer; }
 
+void ROV::CancelLastImage() {
+  std::unique_lock<std::mutex> lock(_immutex);
+  _ReinitImageFlags();
+}
 void ROV::Start() {
   _txdlf = CreateObject<SimplePacket>(
       _txStateLength + _imgTrunkInfoLength + _maxImgTrunkLength, _dlfcrctype);
@@ -262,13 +266,16 @@ void ROV::_SendPacketWithCurrentStateAndImgTrunk() {
   }
 }
 
+void ROV::_ReinitImageFlags() {
+  _imgInBuffer = false;
+  _currentImgPtr = _beginImgPtr;
+  _endImgPtr = _currentImgPtr;
+  _imgInBufferCond.notify_one();
+}
 void ROV::_CheckIfEntireImgIsSent() {
   // Check If it has been sent the last image trunk and call the callback
   if (_imgInBuffer && _currentImgPtr == _endImgPtr) {
-    _imgInBuffer = false;
-    _currentImgPtr = _beginImgPtr;
-    _endImgPtr = _currentImgPtr;
-    _imgInBufferCond.notify_one();
+    _ReinitImageFlags();
     _lastImageSentCallback(*this);
     Log->debug("TX: image transmission completed");
   }

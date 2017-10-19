@@ -48,6 +48,9 @@ static ros::Subscriber encodedImage_sub;
 static ros::Publisher encodingConfig_pub;
 static dccomms::Ptr<ROV> commsNode;
 
+static image_utils_ros_msgs::EncodingConfig emsg;
+static int lastImageSize = -1;
+
 void operatorMsgParserWork() {
   while (1) {
     std::unique_lock<std::mutex> lock(currentOperatorMessage_mutex);
@@ -72,7 +75,6 @@ void operatorMsgParserWork() {
               lastSettings->GetROIX1(), lastSettings->GetROIY1(),
               lastSettings->GetImgSize(), lastSettings->GetROIShift());
 
-    image_utils_ros_msgs::EncodingConfig emsg;
     emsg.max_size = lastSettings->GetImgSize();
     emsg.shift = lastSettings->GetROIShift();
     emsg.x0 = lastSettings->GetROIX0();
@@ -93,8 +95,13 @@ void startOperatorMsgParserWorker() {
 void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
   if (!commsNode->SendingCurrentImage()) {
     Log->Info("Sending the new captured image... ({} bytes)", msg->img.size());
-
-    commsNode->SendImage((void *)msg->img.data(), msg->img.size());
+    lastImageSize =
+        emsg.max_size <= msg->img.size() ? emsg.max_size : msg->img.size();
+    commsNode->SendImage((void *)msg->img.data(), lastImageSize);
+  } else {
+    if (lastImageSize != emsg.max_size) {
+      commsNode->CancelLastImage();
+    }
   }
 }
 

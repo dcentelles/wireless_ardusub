@@ -39,6 +39,7 @@ public:
   void SetCurrentTxState(void *src);
 
   bool SendingCurrentImage();
+  void CancelLastImage();
 
   void SetChecksumType(FCS fcs);
   void Start();
@@ -55,6 +56,7 @@ public:
   void SetTxStateSize(int);
 
 private:
+  void _ReinitImageFlags();
   void _WaitForNewOrders();
   void _SendPacketWithCurrentStateAndImgTrunk();
   void _CheckIfEntireImgIsSent();
