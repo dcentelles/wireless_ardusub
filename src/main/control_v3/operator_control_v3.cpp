@@ -307,9 +307,10 @@ int main(int argc, char **argv) {
   ros::init(argc, argv, "operator_control_v3");
   Log = CreateLogger("operator_control_v3:main");
   Log->Info("Init");
-  Log->LogToConsole(params.log2Console);
   ros::NodeHandle nh("~");
   GetParams(nh);
+
+  Log->LogToConsole(params.log2Console);
   auto stream = CreateObject<dccomms_utils::S100Stream>(
       params.serialPort, SerialPortStream::BAUD_2400);
   stream->Open();
