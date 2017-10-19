@@ -10,6 +10,8 @@
 #include <chrono>
 #include <cpplogging/cpplogging.h>
 #include <dccomms_utils/S100Stream.h>
+#include <image_utils_ros_msgs/EncodedImg.h>
+#include <image_utils_ros_msgs/EncodingConfig.h>
 #include <mavlink_cpp/mavlink_cpp.h>
 #include <wireless_ardusub/HROVMessage.h>
 #include <wireless_ardusub/HROVSettings.h>
@@ -42,6 +44,9 @@ static std::mutex currentOperatorMessage_mutex;
 static std::condition_variable currentOperatorMessage_cond;
 
 static std::thread operatorMsgParserWorker;
+static ros::Subscriber encodedImage_sub;
+static ros::Publisher encodingConfig_pub;
+static dccomms::Ptr<ROV> commsNode;
 
 void operatorMsgParserWork() {
   while (1) {
@@ -67,6 +72,16 @@ void operatorMsgParserWork() {
               lastSettings->GetROIX1(), lastSettings->GetROIY1(),
               lastSettings->GetImgSize(), lastSettings->GetROIShift());
 
+    image_utils_ros_msgs::EncodingConfig emsg;
+    emsg.max_size = lastSettings->GetImgSize();
+    emsg.shift = lastSettings->GetROIShift();
+    emsg.x0 = lastSettings->GetROIX0();
+    emsg.y0 = lastSettings->GetROIY0();
+    emsg.x1 = lastSettings->GetROIX1();
+    emsg.y1 = lastSettings->GetROIY1();
+
+    encodingConfig_pub.publish(emsg);
+
     currentOperatorMessage_updated = false;
   }
 }
@@ -75,7 +90,21 @@ void startOperatorMsgParserWorker() {
   operatorMsgParserWorker = std::thread(operatorMsgParserWork);
 }
 
-void initROSInterface(int argc, char **argv, dccomms::Ptr<ROV> commsNode) {}
+void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
+  if (!commsNode->SendingCurrentImage()) {
+    Log->Info("Sending the new captured image... ({} bytes)", msg->img.size());
+
+    commsNode->SendImage((void *)msg->img.data(), msg->img.size());
+  }
+}
+
+void initROSInterface(int argc, char **argv) {
+  ros::NodeHandle nh;
+  encodedImage_sub = nh.subscribe<image_utils_ros_msgs::EncodedImg>(
+      "encoded_image", 1, boost::bind(handleNewImage, _1));
+  encodingConfig_pub =
+      nh.advertise<image_utils_ros_msgs::EncodingConfig>("encoding_config", 1);
+}
 
 int GetParams() {
   ros::NodeHandle nh("~");
@@ -133,7 +162,7 @@ int main(int argc, char **argv) {
       params.serialPort, SerialPortStream::BAUD_2400);
   stream->Open();
 
-  dccomms::Ptr<ROV> commsNode = dccomms::CreateObject<ROV>(stream);
+  commsNode = dccomms::CreateObject<ROV>(stream);
   commsNode->SetOrdersReceivedCallback([](ROV &receiver) {
     Log->Info("Orders received!");
     uint8_t state[TeleopOrder::Size + HROVSettings::SettingsSize];
@@ -162,25 +191,9 @@ int main(int argc, char **argv) {
   try {
 
     ros::Rate rate(30); // 30 hz
-    initROSInterface(argc, argv, commsNode);
+    initROSInterface(argc, argv);
 
     while (ros::ok()) {
-      if (!commsNode->SendingCurrentImage()) {
-        std::string msg =
-            "En un lugar de la Mancha, de cuyo nombre no quiero"
-            " acordarme, no ha mucho tiempo que vivía un hidalgo de l"
-            "os de lanza en astillero, adarga antigua, rocín flaco y galg"
-            "o corredor. Una olla de algo más vaca que carnero, salpicón las "
-            "más"
-            " noches, duelos y quebrantos los sábados, lentejas los viernes, "
-            "algún pa"
-            "lomino de añadidura los domingos, consumían las tres partes de su "
-            "hacien"
-            "da. El resto della concluían ";
-
-        Log->Info("Sending the new captured image... ({} bytes)", msg.length());
-        commsNode->SendImage((void *)msg.c_str(), msg.length());
-      }
       ros::spinOnce();
       rate.sleep();
     }
