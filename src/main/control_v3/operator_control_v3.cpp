@@ -18,7 +18,7 @@
 #include <sensor_msgs/Joy.h>
 #include <vector>
 #include <wireless_ardusub/HROVMessage.h>
-#include <wireless_ardusub/HROVSettings.h>
+#include <wireless_ardusub/HROVSettingsV2.h>
 #include <wireless_ardusub/TeleopOrder.h>
 #include <wireless_ardusub/nodes/Constants.h>
 #include <wireless_ardusub/nodes/Operator.h>
@@ -47,7 +47,7 @@ private:
       const merbots_whrov_msgs::hrov_settingsConstPtr &settings);
 
   TeleopOrderPtr order;
-  Ptr<HROVSettings> settings;
+  Ptr<HROVSettingsV2> settings;
   // state transmitter
   Ptr<Operator> sender;
   // node handle
@@ -84,7 +84,7 @@ private:
   std::vector<int> previous_buttons;
   image_utils_ros_msgs::EncodedImg encodedImgMsg;
 
-  uint8_t state[TeleopOrder::Size + HROVSettings::SettingsSize];
+  uint8_t state[TeleopOrder::Size + HROVSettingsV2::SettingsSize];
   uint8_t *orderPtr, *settingsPtr;
 };
 
@@ -124,7 +124,7 @@ Teleop::Teleop(Ptr<ICommsLink> stream) {
   sender->SetLogLevel(LogLevel::info);
   sender->SetMaxImageTrunkLength(50);
   sender->SetRxStateSize(HROVMessage::MessageLength);
-  sender->SetTxStateSize(TeleopOrder::Size + HROVSettings::SettingsSize);
+  sender->SetTxStateSize(TeleopOrder::Size + HROVSettingsV2::SettingsSize);
   sender->SetImageReceivedCallback([this](Operator &op) {
     Log->info("New Image received!");
     int encodedImgSize;
@@ -136,7 +136,7 @@ Teleop::Teleop(Ptr<ICommsLink> stream) {
   sender->SetStateReceivedCallback(
       [this](Operator &op) { Log->info("New state received!"); });
 
-  settings = HROVSettings::BuildHROVSettings();
+  settings = HROVSettingsV2::Build();
   order = TeleopOrder::Build();
 
   sender->Start();
@@ -158,7 +158,7 @@ void Teleop::newSettingsReceived(
     const merbots_whrov_msgs::hrov_settingsConstPtr &msg) {
   Log->info("New settings received");
   settings->SetFromROSMsg(msg);
-  memcpy(settingsPtr, settings->GetBuffer(), HROVSettings::SettingsSize);
+  memcpy(settingsPtr, settings->GetBuffer(), HROVSettingsV2::SettingsSize);
   sender->SetDesiredState(state);
 }
 

@@ -123,6 +123,7 @@ SET(${PROJECT_NAME}_INCLUDE_DIRS
     "modules")
 SET(${PROJECT_NAME}_CPP_FILES
                         ${SRCPATH}lib/src/HROVSettings.cpp
+                        ${SRCPATH}lib/src/HROVSettingsV2.cpp
                         ${SRCPATH}lib/src/HROVMoveOrder.cpp
                         ${SRCPATH}lib/src/OperatorMessage.cpp
                         ${SRCPATH}lib/src/HROVMessage.cpp

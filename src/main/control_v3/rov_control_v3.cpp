@@ -14,7 +14,7 @@
 #include <image_utils_ros_msgs/EncodingConfig.h>
 #include <mavlink_cpp/mavlink_cpp.h>
 #include <wireless_ardusub/HROVMessage.h>
-#include <wireless_ardusub/HROVSettings.h>
+#include <wireless_ardusub/HROVSettingsV2.h>
 #include <wireless_ardusub/TeleopOrder.h>
 #include <wireless_ardusub/nodes/ROV.h>
 
@@ -34,7 +34,7 @@ struct Params {
 static LoggerPtr Log;
 static Params params;
 static auto lastOrder = TeleopOrder::Build();
-static auto lastSettings = HROVSettings::BuildHROVSettings();
+static auto lastSettings = HROVSettingsV2::Build();
 static uint16_t localPort = 14550;
 static mavlink_cpp::Ptr<GCS> control =
     mavlink_cpp::CreateObject<GCS>(localPort);
@@ -70,10 +70,12 @@ void operatorMsgParserWork() {
               "\t(x0,y0): ({},{})\n"
               "\t(x1,y1): ({},{})\n)"
               "\tsize: {} bytes"
-              "\tROI shift: {}",
+              "\tROI shift: {}"
+              "\tEncode mono version: {}",
               lastSettings->GetROIX0(), lastSettings->GetROIY0(),
               lastSettings->GetROIX1(), lastSettings->GetROIY1(),
-              lastSettings->GetImgSize(), lastSettings->GetROIShift());
+              lastSettings->GetImgSize(), lastSettings->GetROIShift(),
+              lastSettings->EncodeMonoVersion() ? "true" : "false");
 
     emsg.max_size = lastSettings->GetImgSize();
     emsg.shift = lastSettings->GetROIShift();
@@ -81,6 +83,7 @@ void operatorMsgParserWork() {
     emsg.y0 = lastSettings->GetROIY0();
     emsg.x1 = lastSettings->GetROIX1();
     emsg.y1 = lastSettings->GetROIY1();
+    emsg.encode8bversion = lastSettings->EncodeMonoVersion();
 
     encodingConfig_pub.publish(emsg);
 
@@ -172,7 +175,7 @@ int main(int argc, char **argv) {
   commsNode = dccomms::CreateObject<ROV>(stream);
   commsNode->SetOrdersReceivedCallback([](ROV &receiver) {
     Log->Info("Orders received!");
-    uint8_t state[TeleopOrder::Size + HROVSettings::SettingsSize];
+    uint8_t state[TeleopOrder::Size + HROVSettingsV2::SettingsSize];
     receiver.GetCurrentRxState(state);
     uint8_t *orderPtr = state;
     uint8_t *settingsPtr = orderPtr + TeleopOrder::Size;
@@ -187,7 +190,7 @@ int main(int argc, char **argv) {
 
   commsNode->LogToConsole(params.log2Console);
   commsNode->SetLogLevel(LogLevel::info);
-  commsNode->SetRxStateSize(TeleopOrder::Size + HROVSettings::SettingsSize);
+  commsNode->SetRxStateSize(TeleopOrder::Size + HROVSettingsV2::SettingsSize);
   commsNode->SetTxStateSize(HROVMessage::MessageLength);
   commsNode->SetMaxImageTrunkLength(50);
   commsNode->Start();
