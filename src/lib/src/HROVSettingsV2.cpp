@@ -31,7 +31,7 @@ void HROVSettingsV2::_Init() {
   roi_shift = (uint8_t *)(roi + 5); //+5
   flags = roi_shift;
 
-  // roi shift ocupa 3 bits
+  // roi shift ocupa 4 bits
 
   img_size = (uint16_t *)(flags + 1); //+2
 
@@ -82,7 +82,7 @@ merbots_whrov_msgs::hrov_settings::Ptr HROVSettingsV2::GetROSMsg() {
 void HROVSettingsV2::_SetROIConf(uint16_t x0, uint16_t y0, uint16_t x1,
                                  uint16_t y1, uint8_t shift) {
   *roi_shift &= 0x1f;
-  *roi_shift |= (shift & 0x7) << 5;
+  *roi_shift |= (shift & 0xf) << 4;
   roi[0] = 0;
   roi[1] = 0;
   roi[2] = 0;
@@ -161,7 +161,7 @@ uint16_t HROVSettingsV2::_GetROIY1() {
   return res;
 }
 
-uint8_t HROVSettingsV2::_GetROIShift() { return *roi_shift >> 5; }
+uint8_t HROVSettingsV2::_GetROIShift() { return *roi_shift >> 4; }
 
 void HROVSettingsV2::_SetImgSize(uint16_t size) {
   if (bigEndian) {
