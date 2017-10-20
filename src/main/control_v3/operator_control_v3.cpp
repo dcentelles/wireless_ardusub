@@ -83,6 +83,7 @@ private:
   bool initRT;
   std::vector<int> previous_buttons;
   image_utils_ros_msgs::EncodedImg encodedImgMsg;
+  uint8_t imgBuffer[wireless_ardusub::teleop_v3::MAX_IMG_SIZE];
 
   uint8_t state[TeleopOrder::Size + HROVSettingsV2::SettingsSize];
   uint8_t *orderPtr, *settingsPtr;
@@ -128,8 +129,9 @@ Teleop::Teleop(Ptr<ICommsLink> stream) {
   sender->SetImageReceivedCallback([this](Operator &op) {
     Log->info("New Image received!");
     int encodedImgSize;
-    encodedImgSize = op.GetLastReceivedImage(encodedImgMsg.img.data());
+    encodedImgSize = op.GetLastReceivedImage(imgBuffer);
     encodedImgMsg.img.resize(encodedImgSize);
+    memcpy(encodedImgMsg.img.data(), imgBuffer, encodedImgSize);
     encodedImage_pub.publish(encodedImgMsg);
   });
 
