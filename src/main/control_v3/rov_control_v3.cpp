@@ -14,8 +14,7 @@
 #include <image_utils_ros_msgs/EncodingConfig.h>
 #include <mavlink_cpp/mavlink_cpp.h>
 #include <wireless_ardusub/HROVMessage.h>
-#include <wireless_ardusub/HROVSettingsV2.h>
-#include <wireless_ardusub/TeleopOrder.h>
+#include <wireless_ardusub/OperatorMessageV2.h>
 #include <wireless_ardusub/nodes/ROV.h>
 
 #include <ros/ros.h>
@@ -33,8 +32,9 @@ struct Params {
 
 static LoggerPtr Log;
 static Params params;
-static auto lastOrder = TeleopOrder::Build();
-static auto lastSettings = HROVSettingsV2::Build();
+
+static auto operatorMessage = OperatorMessageV2::Build();
+
 static uint16_t localPort = 14550;
 static mavlink_cpp::Ptr<GCS> control =
     mavlink_cpp::CreateObject<GCS>(localPort);
@@ -58,13 +58,28 @@ void operatorMsgParserWork() {
       currentOperatorMessage_cond.wait(lock);
     }
 
-    Log->Info("Last orders:\n"
-              "\tx: {}\n"
-              "\ty: {}\n"
-              "\tz: {}\n"
-              "\tr: {}\n",
-              lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
-              lastOrder->GetR());
+    OperatorMessageV2::OrderType lastOrderType =
+        operatorMessage->GetOrderType();
+    switch (lastOrderType) {
+    case OperatorMessageV2::OrderType::Move: {
+      auto lastOrder = operatorMessage->GetMoveOrderCopy();
+      Log->Info("Last orders:\n"
+                "\tx: {}\n"
+                "\ty: {}\n"
+                "\tz: {}\n"
+                "\tr: {}\n",
+                lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
+                lastOrder->GetR());
+      break;
+    }
+    case OperatorMessageV2::OrderType::HoldChannel: {
+      auto duration = operatorMessage->GetHoldChannelDuration();
+      Log->Info("Received hold channel order: {} seconds", duration);
+      break;
+    }
+    }
+
+    auto lastSettings = operatorMessage->GetSettingsCopy();
 
     Log->Info("Current image settings:\n"
               "\t(x0,y0): ({},{})\n"
@@ -175,14 +190,11 @@ int main(int argc, char **argv) {
   commsNode = dccomms::CreateObject<ROV>(stream);
   commsNode->SetOrdersReceivedCallback([](ROV &receiver) {
     Log->Info("Orders received!");
-    uint8_t state[TeleopOrder::Size + HROVSettingsV2::SettingsSize];
+    uint8_t state[OperatorMessageV2::MessageLength];
     receiver.GetCurrentRxState(state);
-    uint8_t *orderPtr = state;
-    uint8_t *settingsPtr = orderPtr + TeleopOrder::Size;
 
     currentOperatorMessage_mutex.lock();
-    lastOrder->BuildFromBuffer(orderPtr);
-    lastSettings->UpdateFromBuffer(settingsPtr);
+    operatorMessage->UpdateFromBuffer(state);
     currentOperatorMessage_mutex.unlock();
     currentOperatorMessage_updated = true;
     currentOperatorMessage_cond.notify_one();
@@ -190,7 +202,7 @@ int main(int argc, char **argv) {
 
   commsNode->LogToConsole(params.log2Console);
   commsNode->SetLogLevel(LogLevel::info);
-  commsNode->SetRxStateSize(TeleopOrder::Size + HROVSettingsV2::SettingsSize);
+  commsNode->SetRxStateSize(OperatorMessageV2::MessageLength);
   commsNode->SetTxStateSize(HROVMessage::MessageLength);
   commsNode->SetMaxImageTrunkLength(50);
   commsNode->Start();

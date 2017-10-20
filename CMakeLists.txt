@@ -126,6 +126,7 @@ SET(${PROJECT_NAME}_CPP_FILES
                         ${SRCPATH}lib/src/HROVSettingsV2.cpp
                         ${SRCPATH}lib/src/HROVMoveOrder.cpp
                         ${SRCPATH}lib/src/OperatorMessage.cpp
+                        ${SRCPATH}lib/src/OperatorMessageV2.cpp
                         ${SRCPATH}lib/src/HROVMessage.cpp
                         ${SRCPATH}lib/src/TeleopOrder.cpp
                         ${SRCPATH}lib/src/packets/SimplePacket.cpp
