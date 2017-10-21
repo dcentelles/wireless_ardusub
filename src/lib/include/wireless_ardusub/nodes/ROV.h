@@ -25,7 +25,7 @@ using namespace teleop_v3;
 
 class ROV : public Loggable {
 public:
-  ROV(Ptr<ICommsLink> _comms);
+  ROV(Ptr<CommsDevice> _comms);
   virtual ~ROV();
   void SendImage(void *, unsigned int);
 
@@ -77,7 +77,7 @@ private:
   uint8_t *_buffer;
   uint8_t *_currentRxState, *_currentTxState;
 
-  Ptr<ICommsLink> _comms;
+  Ptr<CommsDevice> _comms;
 
   ServiceThread<ROV> _service;
 

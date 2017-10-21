@@ -17,7 +17,7 @@ void defaultImageReceivedCallback(Operator &rovOperator) {}
 
 void defaultStateReceivedCallback(Operator &rovOperator) {}
 
-Operator::Operator(Ptr<ICommsLink> comms) : txservice(this), rxservice(this) {
+Operator::Operator(Ptr<CommsDevice> comms) : txservice(this), rxservice(this) {
   rxbuffer = 0;
   imgTrunkPtr = 0;
   txbuffer = 0;

@@ -19,7 +19,7 @@ void defaultOrdersReceivedCallback(ROV &rovcamera) {
   // Nothing to do
 }
 
-ROV::ROV(Ptr<ICommsLink> comms) : _service(this) {
+ROV::ROV(Ptr<CommsDevice> comms) : _service(this) {
   // TODO Auto-generated constructor stub
   _comms = comms;
   _SetEndianess();

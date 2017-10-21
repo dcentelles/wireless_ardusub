@@ -27,7 +27,7 @@ inline uint32_t SimplePacket::GetPayloadSize() { return PAYLOAD_SIZE; }
 
 inline int SimplePacket::GetPacketSize() { return _packetSize; }
 
-void SimplePacket::Read(IStream *stream) {
+void SimplePacket::Read(Stream *stream) {
   stream->WaitFor(_pre, PRE_SIZE);
   stream->Read(_payload, PAYLOAD_SIZE + FCS_SIZE);
 }

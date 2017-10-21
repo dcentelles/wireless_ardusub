@@ -14,7 +14,7 @@ public:
   uint8_t *GetPayloadBuffer();
   uint32_t GetPayloadSize();
   int GetPacketSize();
-  void Read(IStream *comms);
+  void Read(Stream *comms);
 
   bool PacketIsOk();
 

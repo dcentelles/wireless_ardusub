@@ -68,7 +68,7 @@ int GetParams() {
 
 class OperatorController : public Logger {
 public:
-  OperatorController(ros::NodeHandle &nh, Ptr<ICommsLink> stream);
+  OperatorController(ros::NodeHandle &nh, Ptr<CommsDevice> stream);
   void Spin();
 
 private:
@@ -135,7 +135,7 @@ private:
 };
 
 OperatorController::OperatorController(ros::NodeHandle &nh,
-                                       Ptr<ICommsLink> stream)
+                                       Ptr<CommsDevice> stream)
     : _orderActionServer(
           nh, "order", boost::bind(&OperatorController::ActionWorker, this, _1),
           false),

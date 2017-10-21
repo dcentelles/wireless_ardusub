@@ -25,7 +25,7 @@ using namespace teleop_v3;
 
 class Operator : public Loggable {
 public:
-  Operator(Ptr<ICommsLink> comms);
+  Operator(Ptr<CommsDevice> comms);
   virtual ~Operator();
   void SetDesiredState(const void *data);
 
@@ -71,7 +71,7 @@ private:
       *beginImgPtr, *beginLastImgPtr;
   uint16_t lastImgSize;
 
-  Ptr<ICommsLink> _comms;
+  Ptr<CommsDevice> _comms;
   Ptr<SimplePacket> txdlf;
   Ptr<SimplePacket> rxdlf;
 
