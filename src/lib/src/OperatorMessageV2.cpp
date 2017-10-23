@@ -13,7 +13,10 @@ const uint8_t OperatorMessageV2::MessageLength =
     TeleopOrder::Size + HROVSettingsV2::SettingsSize + 1 // flags
     ;
 
-OperatorMessageV2::OperatorMessageV2() { _Init(); }
+OperatorMessageV2::OperatorMessageV2() {
+  _Init();
+  SetNoOrder();
+}
 
 OperatorMessageV2::OperatorMessageV2(uint8_t *_buf) {
   _Init();
@@ -53,8 +56,20 @@ TeleopOrderPtr OperatorMessageV2::GetMoveOrderCopy() {
 }
 
 void OperatorMessageV2::SetMoveOrder(TeleopOrderPtr _moveOrder) {
-  SetOrderType(OrderType::Move);
+  _SetOrderType(OrderType::Move);
   memcpy(orderBuffer, _moveOrder->GetBuffer(), TeleopOrder::Size);
+}
+
+void OperatorMessageV2::SetKeepOrientationOrder(uint16_t orientation) {
+  _SetOrderType(OrderType::KeepOrientation);
+  // TODO: check endianess!!
+  *(uint16_t *)orderBuffer = orientation;
+}
+
+uint16_t OperatorMessageV2::GetKeepOrientationOrder() {
+  // TODO: check endianess!!
+  uint16_t value = *(uint16_t *)orderBuffer;
+  return value;
 }
 
 OperatorMessageV2::OrderType OperatorMessageV2::GetOrderType() {
@@ -63,7 +78,8 @@ OperatorMessageV2::OrderType OperatorMessageV2::GetOrderType() {
                                                  : OtherNotImplemented;
 }
 
-void OperatorMessageV2::SetOrderType(OrderType orderType) {
+void OperatorMessageV2::SetNoOrder() { _SetOrderType(NoOrder); }
+void OperatorMessageV2::_SetOrderType(OrderType orderType) {
   *messageInfo = (*messageInfo & ~ORDER_TYPE_MASK) | orderType;
 }
 

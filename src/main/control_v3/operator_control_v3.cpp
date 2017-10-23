@@ -92,11 +92,20 @@ private:
   int _oid, _requestedOID;
   bool _hrovReady, _lastOrderCancelled;
   bool _transmittingOrder;
+
   std::mutex _hrovState_mutex;
   std::condition_variable _hrovState_updated_cond;
+
   std::mutex _currentOperatorMessage_mutex;
   Ptr<OperatorMessageV2> _currentOperatorMessage;
+  std::condition_variable _currentOperatorMessage_cond;
+  bool _currentOperatorMessage_updated;
+
+  std::mutex _currentHROVMessage_mutex;
   Ptr<HROVMessage> _currentHROVMessage;
+  std::condition_variable _currentHROVMessage_cond;
+  bool _currentHROVMessage_updated;
+
   TeleopOrderPtr _teleopOrder;
   Ptr<HROVSettingsV2> _settings;
   Ptr<Operator> _node;
@@ -114,7 +123,8 @@ private:
   std::vector<int> _previous_buttons;
   image_utils_ros_msgs::EncodedImg _encodedImgMsg;
   uint8_t _imgBuffer[wireless_ardusub::teleop_v3::MAX_IMG_SIZE];
-  bool _sendingHighLevelOrder = false;
+
+  std::thread _hrovMsgParserWorker, _msgSenderWorker;
 
   // FUNCTIONS
   bool RisingEdge(const sensor_msgs::Joy::ConstPtr &joy, int index);
@@ -132,7 +142,46 @@ private:
   bool CancelRequested(void);
   void CancelLastOrder(void);
   void ActionWorker(const merbots_whrov_msgs::OrderGoalConstPtr &goal);
+  void StartWorkers();
 };
+
+void OperatorController::StartWorkers() {
+  _hrovMsgParserWorker = std::thread([this]() {
+    while (1) {
+      std::unique_lock<std::mutex> lock(_currentHROVMessage_mutex);
+      while (!_currentHROVMessage_updated) {
+        _currentHROVMessage_cond.wait(lock);
+      }
+      merbots_whrov_msgs::position position;
+
+      auto oid = _currentHROVMessage->GetExpectedOrderSeqNumber();
+      auto cancelled = _currentHROVMessage->LastOrderCancelledFlag();
+      auto ready = _currentHROVMessage->Ready();
+      position.roll = _currentHROVMessage->GetX();
+      position.pitch = _currentHROVMessage->GetY();
+      position.altitude = _currentHROVMessage->GetZ();
+      position.orientation = _currentHROVMessage->GetYaw();
+      _currentHROVMessage_updated = false;
+      lock.unlock();
+
+      _currentHROVState_pub.publish(position);
+      NotifyNewHROVState(ready, oid, cancelled);
+    }
+  });
+  _hrovMsgParserWorker.detach();
+
+  _msgSenderWorker = std::thread([this]() {
+    while (1) {
+      std::unique_lock<std::mutex> lock(_currentOperatorMessage_mutex);
+      while (!_currentOperatorMessage_updated) {
+        _currentOperatorMessage_cond.wait(lock);
+      }
+      _node->SetDesiredState(_currentOperatorMessage->GetBuffer());
+      _currentOperatorMessage_updated = false;
+    }
+  });
+  _msgSenderWorker.detach();
+}
 
 OperatorController::OperatorController(ros::NodeHandle &nh,
                                        Ptr<CommsDevice> stream)
@@ -179,6 +228,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh,
   _node->SetMaxImageTrunkLength(50);
   _node->SetRxStateSize(HROVMessage::MessageLength);
   _node->SetTxStateSize(OperatorMessageV2::MessageLength);
+
   _node->SetImageReceivedCallback([this](Operator &op) {
     Log->info("New Image received!");
     int encodedImgSize;
@@ -190,11 +240,16 @@ OperatorController::OperatorController(ros::NodeHandle &nh,
 
   _node->SetStateReceivedCallback([this](Operator &op) {
     Log->info("New state received!");
+    _currentHROVMessage_mutex.lock();
     _node->GetLastConfirmedState(_currentHROVMessage->GetBuffer());
+    _currentHROVMessage_mutex.unlock();
+    _currentHROVMessage_updated = true;
+    _currentHROVMessage_cond.notify_one();
   });
 
   _node->Start();
   StartOrderActionServer();
+  StartWorkers();
 }
 
 void OperatorController::NotifyNewHROVState(bool _hrovReady, int _requestedOID,
@@ -223,8 +278,11 @@ void OperatorController::NewSettingsReceived(
     const merbots_whrov_msgs::hrov_settingsConstPtr &msg) {
   Log->info("New settings received");
   _settings->SetFromROSMsg(msg);
+  _currentOperatorMessage_mutex.lock();
   _currentOperatorMessage->SetSettings(_settings);
-  _node->SetDesiredState(_currentOperatorMessage->GetBuffer());
+  _currentOperatorMessage_mutex.unlock();
+  _currentOperatorMessage_updated = true;
+  _currentOperatorMessage_cond.notify_one();
 }
 
 void OperatorController::ConfigCallback(
@@ -328,8 +386,6 @@ void OperatorController::JoyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
             _teleopOrder->GetR(), _teleopOrder->Arm() ? "true" : "false",
             modeName);
 
-  _currentOperatorMessage->SetMoveOrder(_teleopOrder);
-  _node->SetDesiredState(_currentOperatorMessage->GetBuffer());
   // remember current button states for future comparison
   _previous_buttons = std::vector<int>(joy->buttons);
 }
@@ -342,10 +398,148 @@ bool OperatorController::CancelRequested(void) {
   return false;
 }
 
-void OperatorController::CancelLastOrder(void) {}
+void OperatorController::CancelLastOrder(void) {
+  // Puede que la orden se haya enviado ya, por lo que hay que cancelarla
+  _currentOperatorMessage_mutex.lock();
+  _currentOperatorMessage->CancelLastOrderFlag(true);
+  _currentOperatorMessage->SetOrderSeqNumber(_requestedOID);
+  _currentOperatorMessage->SetNoOrder();
+  _currentOperatorMessage_updated = true;
+  _currentOperatorMessage_mutex.unlock();
+  _currentOperatorMessage_cond.notify_one();
+}
 
 void OperatorController::ActionWorker(
-    const merbots_whrov_msgs::OrderGoalConstPtr &goal) {}
+    const merbots_whrov_msgs::OrderGoalConstPtr &goal) {
+  switch (goal->type) {
+  case 0: // HEADING
+  {
+    Log->info("Heading order received");
+
+    std::unique_lock<std::mutex> lock(_hrovState_mutex);
+    _orderFeedback.percent_complete = 5;
+    _orderFeedback.message =
+        "Waiting for the ROV to get ready to handle a new order...";
+    _orderActionServer.publishFeedback(_orderFeedback);
+
+    while (_transmittingOrder) {
+      _hrovState_updated_cond.wait_for(lock, std::chrono::seconds(1));
+      if (CancelRequested()) {
+        _orderFeedback.percent_complete = 100;
+        _orderFeedback.message = "Last order cancelled";
+        _orderActionServer.publishFeedback(_orderFeedback);
+        lock.unlock();
+        return;
+      }
+    }
+    // Si el robot recibe una nueva orden con el OID
+    // que espera y está en curso alguna orden, cancelará la orden actual para
+    // ejecutar la nueva.
+    _transmittingOrder = true;
+    _oid = _requestedOID;
+    lock.unlock();
+
+    _orderFeedback.percent_complete = 5;
+    _orderFeedback.message = "Transmitting heading order...";
+    _orderActionServer.publishFeedback(_orderFeedback);
+
+    _currentOperatorMessage_mutex.lock();
+    _currentOperatorMessage->SetOrderSeqNumber(_oid);
+    _currentOperatorMessage->SetKeepOrientationOrder(
+        goal->keep_heading_degrees);
+    _currentOperatorMessage->CancelLastOrderFlag(false);
+    _currentOperatorMessage_updated = true;
+    _currentOperatorMessage_mutex.unlock();
+    _currentOperatorMessage_cond.notify_one();
+
+    _orderFeedback.percent_complete = 15;
+    _orderFeedback.message = "Waiting for the order acknowledgment...";
+    _orderActionServer.publishFeedback(_orderFeedback);
+
+    int nextOID = wireless_ardusub::HROVMessage::GetNextOrderSeqNumber(_oid);
+    lock.lock();
+
+    while (_requestedOID != nextOID) {
+      _hrovState_updated_cond.wait_for(lock, std::chrono::seconds(1));
+      if (CancelRequested()) {
+        _orderFeedback.percent_complete = 50;
+        _orderFeedback.message = "Cancelling last order...";
+        _orderActionServer.publishFeedback(_orderFeedback);
+        do {
+          CancelLastOrder();
+          _hrovState_updated_cond.wait_for(lock, std::chrono::seconds(1));
+        } while (!_lastOrderCancelled);
+
+        _currentOperatorMessage_mutex.lock();
+        _currentOperatorMessage->CancelLastOrderFlag(false);
+        _currentOperatorMessage_updated = true;
+        _currentOperatorMessage_mutex.unlock();
+        _currentOperatorMessage_cond.notify_one();
+
+        _orderFeedback.percent_complete = 100;
+        _orderFeedback.message = "Last order cancelled";
+        _orderActionServer.publishFeedback(_orderFeedback);
+        _transmittingOrder = false;
+        lock.unlock();
+        return;
+      }
+    }
+
+    _currentOperatorMessage_mutex.lock();
+    _currentOperatorMessage->SetNoOrder();
+    _currentOperatorMessage_updated = true;
+    _currentOperatorMessage_mutex.unlock();
+    _currentOperatorMessage_cond.notify_one();
+
+    _orderFeedback.percent_complete = 70;
+    _orderFeedback.message = "ROV received the order.";
+    _orderActionServer.publishFeedback(_orderFeedback);
+
+    while (!_hrovReady) {
+      _hrovState_updated_cond.wait_for(lock, std::chrono::seconds(1));
+      if (CancelRequested()) {
+        _orderFeedback.percent_complete = 50;
+        _orderFeedback.message = "Cancelling last order...";
+        _orderActionServer.publishFeedback(_orderFeedback);
+        do {
+          CancelLastOrder();
+          _hrovState_updated_cond.wait_for(lock, std::chrono::seconds(1));
+        } while (!_lastOrderCancelled);
+
+        _currentOperatorMessage_mutex.lock();
+        _currentOperatorMessage->CancelLastOrderFlag(false);
+        _currentOperatorMessage_updated = true;
+        _currentOperatorMessage_mutex.unlock();
+        _currentOperatorMessage_cond.notify_one();
+
+        _orderFeedback.percent_complete = 100;
+        _orderFeedback.message = "Last order cancelled";
+        _orderActionServer.publishFeedback(_orderFeedback);
+        _transmittingOrder = false;
+        _orderResult.success = true;
+        _orderActionServer.setSucceeded(_orderResult);
+        lock.unlock();
+        return;
+      }
+    }
+
+    _transmittingOrder = false;
+    lock.unlock();
+
+    _orderFeedback.percent_complete = 100;
+    _orderFeedback.message = "Received last order completion confirmation.";
+    _orderActionServer.publishFeedback(_orderFeedback);
+    _orderResult.success = true;
+    _orderActionServer.setSucceeded(_orderResult);
+    break;
+  }
+  case 1: // HOLD TIME
+  {
+    Log->info("Hold image channel order received");
+    break;
+  }
+  }
+}
 
 int main(int argc, char **argv) {
   ros::init(argc, argv, "operator_control_v3");

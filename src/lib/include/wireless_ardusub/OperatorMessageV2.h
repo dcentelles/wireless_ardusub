@@ -40,18 +40,27 @@ public:
   void CancelLastOrderFlag(bool);
   bool CancelLastOrderFlag();
 
-  enum OrderType { NoOrder = 0, Move, HoldChannel, OtherNotImplemented };
+  enum OrderType {
+    NoOrder = 0,
+    Move,
+    KeepOrientation,
+    HoldChannel,
+    OtherNotImplemented
+  };
   OrderType GetOrderType();
-  void SetOrderType(OrderType);
   TeleopOrderPtr GetMoveOrderCopy();
   void SetMoveOrder(TeleopOrderPtr);
+  void SetNoOrder();
   uint8_t GetHoldChannelDuration();
   void SetHoldChannelDuration(uint8_t);
+  void SetKeepOrientationOrder(uint16_t orientation);
+  uint16_t GetKeepOrientationOrder();
 
   HROVSettingsV2Ptr GetSettingsCopy();
   void SetSettings(HROVSettingsV2Ptr);
 
 private:
+  void _SetOrderType(OrderType);
   void _Init();
   uint8_t buffer[MAX_HROVSTATE_LENGHT];
 

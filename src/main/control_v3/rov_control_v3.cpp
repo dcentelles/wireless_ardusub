@@ -13,11 +13,10 @@
 #include <image_utils_ros_msgs/EncodedImg.h>
 #include <image_utils_ros_msgs/EncodingConfig.h>
 #include <mavlink_cpp/mavlink_cpp.h>
+#include <ros/ros.h>
 #include <wireless_ardusub/HROVMessage.h>
 #include <wireless_ardusub/OperatorMessageV2.h>
 #include <wireless_ardusub/nodes/ROV.h>
-
-#include <ros/ros.h>
 
 using namespace cpplogging;
 using namespace std::chrono_literals;
@@ -39,11 +38,23 @@ static uint16_t localPort = 14550;
 static mavlink_cpp::Ptr<GCS> control =
     mavlink_cpp::CreateObject<GCS>(localPort);
 
+static dccomms::Ptr<OperatorMessageV2> currentOperatorMessage =
+    dccomms::CreateObject<OperatorMessageV2>();
 static bool currentOperatorMessage_updated;
 static std::mutex currentOperatorMessage_mutex;
 static std::condition_variable currentOperatorMessage_cond;
 
+static dccomms::Ptr<HROVMessage> currentHROVMessage =
+    dccomms::CreateObject<HROVMessage>();
+static bool currentHROVMessage_updated;
+static std::mutex currentHROVMessage_mutex;
+static std::condition_variable currentHROVMessage_cond;
+
 static std::thread operatorMsgParserWorker;
+static std::thread messageSenderWorker;
+static std::thread keepOrientationWorker;
+static std::thread holdChannelWorker;
+
 static ros::Subscriber encodedImage_sub;
 static ros::Publisher encodingConfig_pub;
 static dccomms::Ptr<ROV> commsNode;
@@ -51,33 +62,137 @@ static dccomms::Ptr<ROV> commsNode;
 static image_utils_ros_msgs::EncodingConfig emsg;
 static int lastImageSize = -1;
 
+static uint16_t desiredOrientation;
+static bool keepOrientationReceived;
+static std::mutex keepOrientation_mutex;
+static std::condition_variable keepOrientation_cond;
+
+static uint16_t holdChannelSeconds;
+static bool holdChannelReceived;
+static std::mutex holdChannel_mutex;
+static std::condition_variable holdChannel_cond;
+
+static bool cancelLastOrder;
+static std::mutex executingOrder_mutex;
+
+void notifyROVBusy() {
+  currentHROVMessage_mutex.lock();
+  currentHROVMessage->Ready(false);
+  currentHROVMessage_mutex.unlock();
+}
+
+void notifyROVReady() {
+  currentHROVMessage_mutex.lock();
+  currentHROVMessage->Ready(true);
+  currentHROVMessage_mutex.unlock();
+}
+
+void mockOrderWork() {
+  notifyROVBusy();
+
+  // work step 0
+  this_thread::sleep_for(chrono::milliseconds(2000));
+  if (cancelLastOrder) {
+    return;
+  }
+
+  // work step 1
+  this_thread::sleep_for(chrono::milliseconds(2000));
+  if (cancelLastOrder) {
+    return;
+  }
+
+  // work step 2
+  this_thread::sleep_for(chrono::milliseconds(2000));
+  if (cancelLastOrder) {
+    return;
+  }
+
+  // work step 3
+  this_thread::sleep_for(chrono::milliseconds(2000));
+
+  notifyROVReady();
+}
+
+void keepOrientationWork() {
+  while (1) {
+    std::unique_lock<std::mutex> lock(keepOrientation_mutex);
+    while (!keepOrientationReceived)
+      keepOrientation_cond.wait(lock);
+    keepOrientationReceived = false;
+    executingOrder_mutex.lock();
+    mockOrderWork();
+    executingOrder_mutex.unlock();
+  }
+}
+
+void holdChannelWork() {
+  while (1) {
+    std::unique_lock<std::mutex> lock(holdChannel_mutex);
+    while (!holdChannelReceived)
+      holdChannel_cond.wait(lock);
+    holdChannelReceived = false;
+    executingOrder_mutex.lock();
+    mockOrderWork();
+    executingOrder_mutex.unlock();
+  }
+}
+
+void handleNewOrder() {
+  currentHROVMessage_mutex.lock();
+  auto orderType = currentOperatorMessage->GetOrderType();
+  if (currentHROVMessage->GetExpectedOrderSeqNumber() ==
+      currentOperatorMessage->GetOrderSeqNumber()) {
+    if (currentOperatorMessage->CancelLastOrderFlag()) {
+      cancelLastOrder = true;
+    } else if (!orderType == OperatorMessageV2::OrderType::NoOrder) {
+      cancelLastOrder = true;
+      switch (orderType) {
+      case OperatorMessageV2::OrderType::HoldChannel: {
+        holdChannel_mutex.lock();
+        holdChannelSeconds = operatorMessage->GetHoldChannelDuration();
+        Log->Info("Received hold channel order: {} seconds",
+                  holdChannelSeconds);
+        holdChannelSeconds = true;
+        holdChannel_mutex.unlock();
+        holdChannel_cond.notify_one();
+        break;
+      }
+      case OperatorMessageV2::OrderType::KeepOrientation: {
+        keepOrientation_mutex.lock();
+        desiredOrientation = operatorMessage->GetKeepOrientationOrder();
+        Log->Info("Received keep orientation order: {} degrees",
+                  desiredOrientation);
+        keepOrientationReceived = true;
+        keepOrientation_mutex.unlock();
+        keepOrientation_cond.notify_one();
+        break;
+      }
+      }
+      currentHROVMessage->IncExpectedOrderSeqNumber();
+    }
+    currentHROVMessage_updated = true;
+    currentHROVMessage_cond.notify_one();
+    currentHROVMessage_mutex.unlock();
+  }
+}
+void messageSenderWork() {
+  while (1) {
+    std::unique_lock<std::mutex> lock(currentHROVMessage_mutex);
+    while (!currentHROVMessage_updated) {
+      currentHROVMessage_cond.wait(lock);
+    }
+    commsNode->SetCurrentTxState(currentHROVMessage->GetBuffer());
+    currentHROVMessage_updated = false;
+  }
+}
 void operatorMsgParserWork() {
   while (1) {
     std::unique_lock<std::mutex> lock(currentOperatorMessage_mutex);
     while (!currentOperatorMessage_updated) {
       currentOperatorMessage_cond.wait(lock);
     }
-
-    OperatorMessageV2::OrderType lastOrderType =
-        operatorMessage->GetOrderType();
-    switch (lastOrderType) {
-    case OperatorMessageV2::OrderType::Move: {
-      auto lastOrder = operatorMessage->GetMoveOrderCopy();
-      Log->Info("Last orders:\n"
-                "\tx: {}\n"
-                "\ty: {}\n"
-                "\tz: {}\n"
-                "\tr: {}\n",
-                lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
-                lastOrder->GetR());
-      break;
-    }
-    case OperatorMessageV2::OrderType::HoldChannel: {
-      auto duration = operatorMessage->GetHoldChannelDuration();
-      Log->Info("Received hold channel order: {} seconds", duration);
-      break;
-    }
-    }
+    currentOperatorMessage_updated = false;
 
     auto lastSettings = operatorMessage->GetSettingsCopy();
 
@@ -102,12 +217,29 @@ void operatorMsgParserWork() {
 
     encodingConfig_pub.publish(emsg);
 
-    currentOperatorMessage_updated = false;
+    OperatorMessageV2::OrderType lastOrderType =
+        operatorMessage->GetOrderType();
+    if (lastOrderType == OperatorMessageV2::OrderType::Move) {
+      auto lastOrder = operatorMessage->GetMoveOrderCopy();
+      Log->Info("Last orders:\n"
+                "\tx: {}\n"
+                "\ty: {}\n"
+                "\tz: {}\n"
+                "\tr: {}\n",
+                lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
+                lastOrder->GetR());
+      break;
+    } else {
+      handleNewOrder();
+    }
   }
 }
 
-void startOperatorMsgParserWorker() {
+void startWorkers() {
   operatorMsgParserWorker = std::thread(operatorMsgParserWork);
+  messageSenderWorker = std::thread(messageSenderWork);
+  holdChannelWorker = std::thread(holdChannelWork);
+  keepOrientationWorker = std::thread(keepOrientationWork);
 }
 
 void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
@@ -181,7 +313,7 @@ int main(int argc, char **argv) {
 
   Log->SetLogLevel(LogLevel::info);
 
-  startOperatorMsgParserWorker();
+  startWorkers();
 
   auto stream = dccomms::CreateObject<dccomms_utils::S100Stream>(
       params.serialPort, SerialPortStream::BAUD_2400);
@@ -207,8 +339,7 @@ int main(int argc, char **argv) {
   commsNode->SetMaxImageTrunkLength(50);
   commsNode->Start();
 
-  auto cstate = dccomms::CreateObject<HROVMessage>();
-  commsNode->SetCurrentTxState(cstate->GetBuffer());
+  commsNode->SetCurrentTxState(currentHROVMessage->GetBuffer());
 
   try {
 
