@@ -32,8 +32,6 @@ struct Params {
 static LoggerPtr Log;
 static Params params;
 
-static auto operatorMessage = OperatorMessageV2::Build();
-
 static uint16_t localPort = 14550;
 static mavlink_cpp::Ptr<GCS> control =
     mavlink_cpp::CreateObject<GCS>(localPort);
@@ -75,15 +73,28 @@ static std::condition_variable holdChannel_cond;
 static bool cancelLastOrder;
 static std::mutex executingOrder_mutex;
 
+void notifyHROVMessageUpdated() {
+  currentHROVMessage_updated = true;
+  currentHROVMessage_cond.notify_one();
+}
+void notifyLastOrderCancellation() {
+  currentHROVMessage_mutex.lock();
+  currentHROVMessage->LastOrderCancelledFlag(true);
+  currentHROVMessage->Ready(true);
+  notifyHROVMessageUpdated();
+  currentHROVMessage_mutex.unlock();
+}
 void notifyROVBusy() {
   currentHROVMessage_mutex.lock();
   currentHROVMessage->Ready(false);
+  notifyHROVMessageUpdated();
   currentHROVMessage_mutex.unlock();
 }
 
 void notifyROVReady() {
   currentHROVMessage_mutex.lock();
   currentHROVMessage->Ready(true);
+  notifyHROVMessageUpdated();
   currentHROVMessage_mutex.unlock();
 }
 
@@ -93,18 +104,21 @@ void mockOrderWork() {
   // work step 0
   this_thread::sleep_for(chrono::milliseconds(2000));
   if (cancelLastOrder) {
+    notifyLastOrderCancellation();
     return;
   }
 
   // work step 1
   this_thread::sleep_for(chrono::milliseconds(2000));
   if (cancelLastOrder) {
+    notifyLastOrderCancellation();
     return;
   }
 
   // work step 2
   this_thread::sleep_for(chrono::milliseconds(2000));
   if (cancelLastOrder) {
+    notifyLastOrderCancellation();
     return;
   }
 
@@ -122,6 +136,7 @@ void keepOrientationWork() {
     keepOrientationReceived = false;
     executingOrder_mutex.lock();
     mockOrderWork();
+    cancelLastOrder = false;
     executingOrder_mutex.unlock();
   }
 }
@@ -134,6 +149,7 @@ void holdChannelWork() {
     holdChannelReceived = false;
     executingOrder_mutex.lock();
     mockOrderWork();
+    cancelLastOrder = false;
     executingOrder_mutex.unlock();
   }
 }
@@ -141,8 +157,9 @@ void holdChannelWork() {
 void handleNewOrder() {
   currentHROVMessage_mutex.lock();
   auto orderType = currentOperatorMessage->GetOrderType();
-  if (currentHROVMessage->GetExpectedOrderSeqNumber() ==
-      currentOperatorMessage->GetOrderSeqNumber()) {
+  auto eSeq = currentHROVMessage->GetExpectedOrderSeqNumber();
+  auto cSeq = currentOperatorMessage->GetOrderSeqNumber();
+  if (eSeq == cSeq) {
     if (currentOperatorMessage->CancelLastOrderFlag()) {
       cancelLastOrder = true;
     } else if (!orderType == OperatorMessageV2::OrderType::NoOrder) {
@@ -150,7 +167,7 @@ void handleNewOrder() {
       switch (orderType) {
       case OperatorMessageV2::OrderType::HoldChannel: {
         holdChannel_mutex.lock();
-        holdChannelSeconds = operatorMessage->GetHoldChannelDuration();
+        holdChannelSeconds = currentOperatorMessage->GetHoldChannelDuration();
         Log->Info("Received hold channel order: {} seconds",
                   holdChannelSeconds);
         holdChannelSeconds = true;
@@ -160,7 +177,7 @@ void handleNewOrder() {
       }
       case OperatorMessageV2::OrderType::KeepOrientation: {
         keepOrientation_mutex.lock();
-        desiredOrientation = operatorMessage->GetKeepOrientationOrder();
+        desiredOrientation = currentOperatorMessage->GetKeepOrientationOrder();
         Log->Info("Received keep orientation order: {} degrees",
                   desiredOrientation);
         keepOrientationReceived = true;
@@ -171,8 +188,7 @@ void handleNewOrder() {
       }
       currentHROVMessage->IncExpectedOrderSeqNumber();
     }
-    currentHROVMessage_updated = true;
-    currentHROVMessage_cond.notify_one();
+    notifyHROVMessageUpdated();
     currentHROVMessage_mutex.unlock();
   }
 }
@@ -194,7 +210,7 @@ void operatorMsgParserWork() {
     }
     currentOperatorMessage_updated = false;
 
-    auto lastSettings = operatorMessage->GetSettingsCopy();
+    auto lastSettings = currentOperatorMessage->GetSettingsCopy();
 
     Log->Info("Current image settings:\n"
               "\t(x0,y0): ({},{})\n"
@@ -218,9 +234,9 @@ void operatorMsgParserWork() {
     encodingConfig_pub.publish(emsg);
 
     OperatorMessageV2::OrderType lastOrderType =
-        operatorMessage->GetOrderType();
+        currentOperatorMessage->GetOrderType();
     if (lastOrderType == OperatorMessageV2::OrderType::Move) {
-      auto lastOrder = operatorMessage->GetMoveOrderCopy();
+      auto lastOrder = currentOperatorMessage->GetMoveOrderCopy();
       Log->Info("Last orders:\n"
                 "\tx: {}\n"
                 "\ty: {}\n"
@@ -326,7 +342,7 @@ int main(int argc, char **argv) {
     receiver.GetCurrentRxState(state);
 
     currentOperatorMessage_mutex.lock();
-    operatorMessage->UpdateFromBuffer(state);
+    currentOperatorMessage->UpdateFromBuffer(state);
     currentOperatorMessage_mutex.unlock();
     currentOperatorMessage_updated = true;
     currentOperatorMessage_cond.notify_one();

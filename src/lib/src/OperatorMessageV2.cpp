@@ -37,7 +37,10 @@ OperatorMessageV2::~OperatorMessageV2() {
 
 uint8_t OperatorMessageV2::GetHoldChannelDuration() { return *orderBuffer; }
 
-void OperatorMessageV2::SetHoldChannelDuration(uint8_t v) { *orderBuffer = v; }
+void OperatorMessageV2::SetHoldChannelOrder(uint8_t v) {
+  _SetOrderType(OrderType::HoldChannel);
+  *orderBuffer = v;
+}
 
 HROVSettingsV2Ptr OperatorMessageV2::GetSettingsCopy() {
   auto settings = HROVSettingsV2::Build();

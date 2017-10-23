@@ -52,7 +52,7 @@ public:
   void SetMoveOrder(TeleopOrderPtr);
   void SetNoOrder();
   uint8_t GetHoldChannelDuration();
-  void SetHoldChannelDuration(uint8_t);
+  void SetHoldChannelOrder(uint8_t);
   void SetKeepOrientationOrder(uint16_t orientation);
   uint16_t GetKeepOrientationOrder();
 
