@@ -252,11 +252,11 @@ OperatorController::OperatorController(ros::NodeHandle &nh,
   StartWorkers();
 }
 
-void OperatorController::NotifyNewHROVState(bool _hrovReady, int _requestedOID,
+void OperatorController::NotifyNewHROVState(bool hrovReady, int requestedOID,
                                             bool cancelled) {
   _hrovState_mutex.lock();
-  _hrovReady = _hrovReady;
-  _requestedOID = _requestedOID;
+  _hrovReady = hrovReady;
+  _requestedOID = requestedOID;
   _lastOrderCancelled = cancelled;
   _hrovState_mutex.unlock();
   _hrovState_updated_cond.notify_one();
@@ -400,13 +400,15 @@ bool OperatorController::CancelRequested(void) {
 
 void OperatorController::CancelLastOrder(void) {
   // Puede que la orden se haya enviado ya, por lo que hay que cancelarla
+  int oid = _requestedOID;
   _currentOperatorMessage_mutex.lock();
   _currentOperatorMessage->CancelLastOrderFlag(true);
-  _currentOperatorMessage->SetOrderSeqNumber(_requestedOID);
+  _currentOperatorMessage->SetOrderSeqNumber(oid);
   _currentOperatorMessage->SetNoOrder();
   _currentOperatorMessage_updated = true;
   _currentOperatorMessage_mutex.unlock();
   _currentOperatorMessage_cond.notify_one();
+  // return HROVMessage::GetNextOrderSeqNumber(oid);
 }
 
 void OperatorController::ActionWorker(
@@ -415,130 +417,133 @@ void OperatorController::ActionWorker(
   case 0: // HEADING
   {
     Log->info("Heading order received");
-
-    std::unique_lock<std::mutex> lock(_hrovState_mutex);
-    _orderFeedback.percent_complete = 5;
-    _orderFeedback.message =
-        "Waiting for the ROV to get ready to handle a new order...";
-    _orderActionServer.publishFeedback(_orderFeedback);
-
-    while (_transmittingOrder) {
-      _hrovState_updated_cond.wait_for(lock, std::chrono::seconds(1));
-      if (CancelRequested()) {
-        _orderFeedback.percent_complete = 100;
-        _orderFeedback.message = "Last order cancelled";
-        _orderActionServer.publishFeedback(_orderFeedback);
-        lock.unlock();
-        return;
-      }
-    }
-    // Si el robot recibe una nueva orden con el OID
-    // que espera y está en curso alguna orden, cancelará la orden actual para
-    // ejecutar la nueva.
-    _transmittingOrder = true;
-    _oid = _requestedOID;
-    lock.unlock();
-
-    _orderFeedback.percent_complete = 5;
-    _orderFeedback.message = "Transmitting heading order...";
-    _orderActionServer.publishFeedback(_orderFeedback);
-
     _currentOperatorMessage_mutex.lock();
-    _currentOperatorMessage->SetOrderSeqNumber(_oid);
     _currentOperatorMessage->SetKeepOrientationOrder(
         goal->keep_heading_degrees);
-    _currentOperatorMessage->CancelLastOrderFlag(false);
-    _currentOperatorMessage_updated = true;
     _currentOperatorMessage_mutex.unlock();
-    _currentOperatorMessage_cond.notify_one();
-
-    _orderFeedback.percent_complete = 15;
-    _orderFeedback.message = "Waiting for the order acknowledgment...";
-    _orderActionServer.publishFeedback(_orderFeedback);
-
-    int nextOID = wireless_ardusub::HROVMessage::GetNextOrderSeqNumber(_oid);
-    lock.lock();
-
-    while (_requestedOID != nextOID) {
-      _hrovState_updated_cond.wait_for(lock, std::chrono::seconds(1));
-      if (CancelRequested()) {
-        _orderFeedback.percent_complete = 50;
-        _orderFeedback.message = "Cancelling last order...";
-        _orderActionServer.publishFeedback(_orderFeedback);
-        do {
-          CancelLastOrder();
-          _hrovState_updated_cond.wait_for(lock, std::chrono::seconds(1));
-        } while (!_lastOrderCancelled);
-
-        _currentOperatorMessage_mutex.lock();
-        _currentOperatorMessage->CancelLastOrderFlag(false);
-        _currentOperatorMessage_updated = true;
-        _currentOperatorMessage_mutex.unlock();
-        _currentOperatorMessage_cond.notify_one();
-
-        _orderFeedback.percent_complete = 100;
-        _orderFeedback.message = "Last order cancelled";
-        _orderActionServer.publishFeedback(_orderFeedback);
-        _transmittingOrder = false;
-        lock.unlock();
-        return;
-      }
-    }
-
-    _currentOperatorMessage_mutex.lock();
-    _currentOperatorMessage->SetNoOrder();
-    _currentOperatorMessage_updated = true;
-    _currentOperatorMessage_mutex.unlock();
-    _currentOperatorMessage_cond.notify_one();
-
-    _orderFeedback.percent_complete = 70;
-    _orderFeedback.message = "ROV received the order.";
-    _orderActionServer.publishFeedback(_orderFeedback);
-
-    while (!_hrovReady) {
-      _hrovState_updated_cond.wait_for(lock, std::chrono::seconds(1));
-      if (CancelRequested()) {
-        _orderFeedback.percent_complete = 50;
-        _orderFeedback.message = "Cancelling last order...";
-        _orderActionServer.publishFeedback(_orderFeedback);
-        do {
-          CancelLastOrder();
-          _hrovState_updated_cond.wait_for(lock, std::chrono::seconds(1));
-        } while (!_lastOrderCancelled);
-
-        _currentOperatorMessage_mutex.lock();
-        _currentOperatorMessage->CancelLastOrderFlag(false);
-        _currentOperatorMessage_updated = true;
-        _currentOperatorMessage_mutex.unlock();
-        _currentOperatorMessage_cond.notify_one();
-
-        _orderFeedback.percent_complete = 100;
-        _orderFeedback.message = "Last order cancelled";
-        _orderActionServer.publishFeedback(_orderFeedback);
-        _transmittingOrder = false;
-        _orderResult.success = true;
-        _orderActionServer.setSucceeded(_orderResult);
-        lock.unlock();
-        return;
-      }
-    }
-
-    _transmittingOrder = false;
-    lock.unlock();
-
-    _orderFeedback.percent_complete = 100;
-    _orderFeedback.message = "Received last order completion confirmation.";
-    _orderActionServer.publishFeedback(_orderFeedback);
-    _orderResult.success = true;
-    _orderActionServer.setSucceeded(_orderResult);
-    break;
   }
   case 1: // HOLD TIME
   {
     Log->info("Hold image channel order received");
+    _currentOperatorMessage_mutex.lock();
+    _currentOperatorMessage->SetHoldChannelOrder(goal->hold_channel_duration);
+    _currentOperatorMessage_mutex.unlock();
     break;
   }
   }
+
+  std::unique_lock<std::mutex> lock(_hrovState_mutex);
+  _orderFeedback.percent_complete = 5;
+  _orderFeedback.message =
+      "Waiting for the ROV to get ready to handle a new order...";
+  _orderActionServer.publishFeedback(_orderFeedback);
+
+  while (_transmittingOrder) {
+    _hrovState_updated_cond.wait_for(lock, std::chrono::seconds(1));
+    if (CancelRequested()) {
+      _orderFeedback.percent_complete = 100;
+      _orderFeedback.message = "Last order cancelled";
+      _orderActionServer.publishFeedback(_orderFeedback);
+      lock.unlock();
+      return;
+    }
+  }
+  // Si el robot recibe una nueva orden con el OID
+  // que espera y está en curso alguna orden, cancelará la orden actual para
+  // ejecutar la nueva.
+  _transmittingOrder = true;
+  _oid = _requestedOID;
+  lock.unlock();
+
+  _orderFeedback.percent_complete = 5;
+  _orderFeedback.message = "Transmitting order...";
+  _orderActionServer.publishFeedback(_orderFeedback);
+
+  _currentOperatorMessage_mutex.lock();
+  _currentOperatorMessage->SetOrderSeqNumber(_oid);
+  _currentOperatorMessage_updated = true;
+  _currentOperatorMessage_mutex.unlock();
+  _currentOperatorMessage_cond.notify_one();
+
+  _orderFeedback.percent_complete = 15;
+  _orderFeedback.message = "Waiting for the order acknowledgment...";
+  _orderActionServer.publishFeedback(_orderFeedback);
+
+  int nextOID = wireless_ardusub::HROVMessage::GetNextOrderSeqNumber(_oid);
+  lock.lock();
+
+  while (_requestedOID != nextOID) {
+    _hrovState_updated_cond.wait_for(lock, std::chrono::seconds(1));
+    if (CancelRequested()) {
+      _orderFeedback.percent_complete = 50;
+      _orderFeedback.message = "Cancelling last order...";
+      _orderActionServer.publishFeedback(_orderFeedback);
+      do {
+        CancelLastOrder();
+        _hrovState_updated_cond.wait(lock);
+      } while (!_lastOrderCancelled && !_hrovReady);
+
+      _currentOperatorMessage_mutex.lock();
+      _currentOperatorMessage->CancelLastOrderFlag(false);
+      _currentOperatorMessage_updated = true;
+      _currentOperatorMessage_mutex.unlock();
+      _currentOperatorMessage_cond.notify_one();
+
+      _orderFeedback.percent_complete = 100;
+      _orderFeedback.message = "Last order cancelled";
+      _orderActionServer.publishFeedback(_orderFeedback);
+      _transmittingOrder = false;
+      lock.unlock();
+      return;
+    }
+  }
+
+  _currentOperatorMessage_mutex.lock();
+  _currentOperatorMessage->SetNoOrder();
+  _currentOperatorMessage_updated = true;
+  _currentOperatorMessage_mutex.unlock();
+  _currentOperatorMessage_cond.notify_one();
+
+  _orderFeedback.percent_complete = 70;
+  _orderFeedback.message = "ROV received the order.";
+  _orderActionServer.publishFeedback(_orderFeedback);
+
+  while (!_hrovReady) {
+    _hrovState_updated_cond.wait_for(lock, std::chrono::seconds(1));
+    if (CancelRequested()) {
+      _orderFeedback.percent_complete = 50;
+      _orderFeedback.message = "Cancelling last order...";
+      _orderActionServer.publishFeedback(_orderFeedback);
+      do {
+        CancelLastOrder();
+        _hrovState_updated_cond.wait(lock);
+      } while (!_lastOrderCancelled && !_hrovReady);
+
+      _currentOperatorMessage_mutex.lock();
+      _currentOperatorMessage->CancelLastOrderFlag(false);
+      _currentOperatorMessage_updated = true;
+      _currentOperatorMessage_mutex.unlock();
+      _currentOperatorMessage_cond.notify_one();
+
+      _orderFeedback.percent_complete = 100;
+      _orderFeedback.message = "Last order cancelled";
+      _orderActionServer.publishFeedback(_orderFeedback);
+      _transmittingOrder = false;
+      _orderResult.success = true;
+      _orderActionServer.setSucceeded(_orderResult);
+      lock.unlock();
+      return;
+    }
+  }
+
+  _transmittingOrder = false;
+  lock.unlock();
+
+  _orderFeedback.percent_complete = 100;
+  _orderFeedback.message = "Received last order completion confirmation.";
+  _orderActionServer.publishFeedback(_orderFeedback);
+  _orderResult.success = true;
+  _orderActionServer.setSucceeded(_orderResult);
 }
 
 int main(int argc, char **argv) {

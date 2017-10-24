@@ -71,20 +71,34 @@ static std::mutex holdChannel_mutex;
 static std::condition_variable holdChannel_cond;
 
 static bool cancelLastOrder;
+
+static bool executingOrder;
 static std::mutex executingOrder_mutex;
+static std::condition_variable executingOrder_cond;
 
 void notifyHROVMessageUpdated() {
   currentHROVMessage_updated = true;
   currentHROVMessage_cond.notify_one();
 }
-void notifyLastOrderCancellation() {
+void notifyLastOrderCancellationAndRobotReady() {
+  executingOrder_mutex.lock();
+  executingOrder = false;
+  executingOrder_cond.notify_one();
+  executingOrder_mutex.unlock();
+
   currentHROVMessage_mutex.lock();
   currentHROVMessage->LastOrderCancelledFlag(true);
   currentHROVMessage->Ready(true);
   notifyHROVMessageUpdated();
   currentHROVMessage_mutex.unlock();
 }
+
 void notifyROVBusy() {
+  executingOrder_mutex.lock();
+  executingOrder = true;
+  executingOrder_cond.notify_one();
+  executingOrder_mutex.unlock();
+
   currentHROVMessage_mutex.lock();
   currentHROVMessage->Ready(false);
   notifyHROVMessageUpdated();
@@ -92,6 +106,11 @@ void notifyROVBusy() {
 }
 
 void notifyROVReady() {
+  executingOrder_mutex.lock();
+  executingOrder = false;
+  executingOrder_cond.notify_one();
+  executingOrder_mutex.unlock();
+
   currentHROVMessage_mutex.lock();
   currentHROVMessage->Ready(true);
   notifyHROVMessageUpdated();
@@ -104,21 +123,21 @@ void mockOrderWork() {
   // work step 0
   this_thread::sleep_for(chrono::milliseconds(2000));
   if (cancelLastOrder) {
-    notifyLastOrderCancellation();
+    notifyLastOrderCancellationAndRobotReady();
     return;
   }
 
   // work step 1
   this_thread::sleep_for(chrono::milliseconds(2000));
   if (cancelLastOrder) {
-    notifyLastOrderCancellation();
+    notifyLastOrderCancellationAndRobotReady();
     return;
   }
 
   // work step 2
   this_thread::sleep_for(chrono::milliseconds(2000));
   if (cancelLastOrder) {
-    notifyLastOrderCancellation();
+    notifyLastOrderCancellationAndRobotReady();
     return;
   }
 
@@ -130,67 +149,85 @@ void mockOrderWork() {
 
 void keepOrientationWork() {
   while (1) {
+    Log->Debug("Waiting keep orientation order");
     std::unique_lock<std::mutex> lock(keepOrientation_mutex);
     while (!keepOrientationReceived)
       keepOrientation_cond.wait(lock);
+    Log->Debug("Keep orientation received!");
     keepOrientationReceived = false;
-    executingOrder_mutex.lock();
     mockOrderWork();
-    cancelLastOrder = false;
-    executingOrder_mutex.unlock();
+    Log->Debug("Keep orientation task finished");
   }
 }
 
 void holdChannelWork() {
   while (1) {
+    Log->Debug("Waiting hold channel order");
     std::unique_lock<std::mutex> lock(holdChannel_mutex);
     while (!holdChannelReceived)
       holdChannel_cond.wait(lock);
+    Log->Debug("Hold channel received");
     holdChannelReceived = false;
-    executingOrder_mutex.lock();
     mockOrderWork();
-    cancelLastOrder = false;
-    executingOrder_mutex.unlock();
+    Log->Debug("Hold channel finished");
   }
 }
 
+void CancelLastOrder() {
+  std::unique_lock<std::mutex> lock(executingOrder_mutex);
+  while (executingOrder) {
+    cancelLastOrder = true;
+    executingOrder_cond.wait(lock);
+  }
+  cancelLastOrder = false;
+  lock.unlock();
+}
+
 void handleNewOrder() {
+  Log->Debug("Locking HROV message buffer");
+
   currentHROVMessage_mutex.lock();
-  auto orderType = currentOperatorMessage->GetOrderType();
   auto eSeq = currentHROVMessage->GetExpectedOrderSeqNumber();
+  currentHROVMessage_mutex.unlock();
+
+  auto orderType = currentOperatorMessage->GetOrderType();
   auto cSeq = currentOperatorMessage->GetOrderSeqNumber();
+  auto cancelLastOrder = currentOperatorMessage->CancelLastOrderFlag();
+
   if (eSeq == cSeq) {
-    if (currentOperatorMessage->CancelLastOrderFlag()) {
-      cancelLastOrder = true;
-    } else if (!orderType == OperatorMessageV2::OrderType::NoOrder) {
-      cancelLastOrder = true;
+    if (cancelLastOrder) {
+      Log->Debug("Cancelation requested");
+      CancelLastOrder();
+      Log->Debug("Cancelled");
+    } else if (orderType != OperatorMessageV2::OrderType::NoOrder) {
+      Log->Debug("New order requested. Cancel current order (if any)");
+      CancelLastOrder();
+      Log->Debug("Cancelled");
       switch (orderType) {
       case OperatorMessageV2::OrderType::HoldChannel: {
-        holdChannel_mutex.lock();
         holdChannelSeconds = currentOperatorMessage->GetHoldChannelDuration();
-        Log->Info("Received hold channel order: {} seconds",
+        Log->Info("Received hold channel duration order: {} seconds",
                   holdChannelSeconds);
-        holdChannelSeconds = true;
-        holdChannel_mutex.unlock();
+        holdChannelReceived = true;
         holdChannel_cond.notify_one();
         break;
       }
       case OperatorMessageV2::OrderType::KeepOrientation: {
-        keepOrientation_mutex.lock();
         desiredOrientation = currentOperatorMessage->GetKeepOrientationOrder();
         Log->Info("Received keep orientation order: {} degrees",
                   desiredOrientation);
         keepOrientationReceived = true;
-        keepOrientation_mutex.unlock();
         keepOrientation_cond.notify_one();
         break;
       }
       }
+      currentHROVMessage_mutex.lock();
       currentHROVMessage->IncExpectedOrderSeqNumber();
+      currentHROVMessage_mutex.unlock();
     }
-    notifyHROVMessageUpdated();
-    currentHROVMessage_mutex.unlock();
   }
+  notifyHROVMessageUpdated();
+  Log->Debug("Notify HROV message buffer updated");
 }
 void messageSenderWork() {
   while (1) {
@@ -327,7 +364,7 @@ int main(int argc, char **argv) {
   control->Start();
   control->LogToConsole(params.log2Console);
 
-  Log->SetLogLevel(LogLevel::info);
+  Log->SetLogLevel(LogLevel::debug);
 
   startWorkers();
 
@@ -346,6 +383,8 @@ int main(int argc, char **argv) {
     currentOperatorMessage_mutex.unlock();
     currentOperatorMessage_updated = true;
     currentOperatorMessage_cond.notify_one();
+
+    Log->Info("Orders updated");
   });
 
   commsNode->LogToConsole(params.log2Console);
@@ -355,6 +394,7 @@ int main(int argc, char **argv) {
   commsNode->SetMaxImageTrunkLength(50);
   commsNode->Start();
 
+  currentHROVMessage->Ready(true);
   commsNode->SetCurrentTxState(currentHROVMessage->GetBuffer());
 
   try {
