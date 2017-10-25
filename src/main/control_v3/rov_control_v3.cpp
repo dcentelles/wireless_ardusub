@@ -290,7 +290,6 @@ void operatorMsgParserWork() {
                 "\tr: {}\n",
                 lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
                 lastOrder->GetR());
-      break;
     } else {
       handleNewOrder();
     }
