@@ -56,11 +56,14 @@ public:
   void SetMaxImageTrunkLength(int);
   void SetRxStateSize(int);
   void SetTxStateSize(int);
+  void DisableTransmission();
+  void EnableTransmission();
 
 private:
   void _UpdateRxStateSize(int);
   void _UpdateTxStateSize(int);
 
+  bool _canTransmit;
   f_notification imageReceivedCallback;
   f_notification stateReceivedCallback;
 

@@ -19,6 +19,7 @@
 #include <ros/ros.h>
 #include <sensor_msgs/Joy.h>
 #include <vector>
+#include <wireless_ardusub/Constants.h>
 #include <wireless_ardusub/HROVMessage.h>
 #include <wireless_ardusub/OperatorMessageV2.h>
 #include <wireless_ardusub/nodes/Constants.h>
@@ -451,11 +452,13 @@ void OperatorController::ActionWorker(
     Log->info("Heading order received");
     _currentOperatorMessage->SetKeepOrientationOrder(
         goal->keep_heading_degrees);
+    break;
   }
   case 1: // HOLD TIME
   {
     Log->info("Hold image channel order received");
-    _currentOperatorMessage->SetHoldChannelOrder(goal->hold_channel_duration);
+    _currentOperatorMessage->SetHoldChannelOrder(goal->hold_channel_duration +
+                                                 5);
     break;
   }
   }
@@ -506,6 +509,21 @@ void OperatorController::ActionWorker(
   _orderFeedback.message = "ROV received the order.";
   _orderActionServer.publishFeedback(_orderFeedback);
 
+  switch (goal->type) {
+  case 0: // HEADING
+  {
+    // do nothing
+    break;
+  }
+  case 1: // HOLD TIME
+  {
+    _node->DisableTransmission();
+    this_thread::sleep_for(chrono::seconds(goal->hold_channel_duration + 5));
+    _node->EnableTransmission();
+    break;
+  }
+  }
+
   while (!_hrovReady) {
     _hrovState_updated_cond.wait_for(lock, std::chrono::seconds(1));
     if (CancelRequested()) {
@@ -534,14 +552,14 @@ void OperatorController::ActionWorker(
     }
   }
 
-  _transmittingOrder = false;
-  lock.unlock();
-
   _orderFeedback.percent_complete = 100;
   _orderFeedback.message = "Received last order completion confirmation.";
   _orderActionServer.publishFeedback(_orderFeedback);
   _orderResult.success = true;
   _orderActionServer.setSucceeded(_orderResult);
+
+  _transmittingOrder = false;
+  lock.unlock();
 }
 
 int main(int argc, char **argv) {
@@ -552,7 +570,7 @@ int main(int argc, char **argv) {
 
   Log->LogToConsole(params.log2Console);
   auto stream = CreateObject<dccomms_utils::S100Stream>(
-      params.serialPort, SerialPortStream::BAUD_2400);
+      params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
   stream->Open();
 
   ros::NodeHandle nh;

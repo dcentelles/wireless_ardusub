@@ -19,7 +19,8 @@ void defaultOrdersReceivedCallback(ROV &rovcamera) {
   // Nothing to do
 }
 
-ROV::ROV(Ptr<CommsDevice> comms) : _service(this) {
+ROV::ROV(Ptr<CommsDevice> comms)
+    : _commsWorker(this), _holdChannelCommsWorker(this) {
   // TODO Auto-generated constructor stub
   _comms = comms;
   _SetEndianess();
@@ -39,15 +40,16 @@ ROV::ROV(Ptr<CommsDevice> comms) : _service(this) {
   _lastImageSentCallback = &defaultLastImageSentCallback;
   _ordersReceivedCallback = &defaultOrdersReceivedCallback;
 
-  _service.SetWork(&ROV::_Work);
+  _commsWorker.SetWork(&ROV::_Work);
+  _holdChannelCommsWorker.SetWork(&ROV::_HoldChannelWork);
   SetLogName("ROV");
   _txStateSet = false;
 }
 
 ROV::~ROV() {
   // TODO Auto-generated destructor stub
-  if (_service.IsRunning())
-    _service.Stop();
+  if (_commsWorker.IsRunning())
+    _commsWorker.Stop();
   delete _buffer;
 }
 
@@ -129,6 +131,8 @@ void ROV::SendImage(void *_buf, unsigned int _length) {
   }
 
   _imgInBuffer = true;
+  lock.unlock();
+  _imgInBufferCond.notify_one();
   Log->debug("New image available to transmit ({} bytes).", _length);
 
   // mutex is unlocked automatically when calling the unique_lock destructor:
@@ -170,11 +174,13 @@ void ROV::Start() {
 
   _rxStatePtr = _rxbuffer;
 
-  _service.Start();
+  _holdChannel = false;
+  _commsWorker.Start();
+  _holdChannelCommsWorker.Start();
 }
 
 void ROV::_WaitForNewOrders() {
-  *_comms >> _rxdlf;
+  _comms >> _rxdlf;
   if (_rxdlf->PacketIsOk()) {
     Log->info("Packet received ({} bytes)", _rxdlf->GetPacketSize());
     _UpdateCurrentRxStateFromRxState();
@@ -192,6 +198,23 @@ void ROV::_Work() {
   _immutex.unlock();
 }
 
+void ROV::HoldChannel(bool v) {
+  _holdChannel = v;
+  _holdChannel_cond.notify_one();
+}
+
+void ROV::_HoldChannelWork() {
+  std::unique_lock<std::mutex> holdChanneLock(_holdChannel_mutex);
+  while (!_holdChannel)
+    _holdChannel_cond.wait(holdChanneLock);
+
+  std::unique_lock<std::mutex> lock(_immutex);
+  while (!_imgInBuffer) {
+    _imgInBufferCond.wait(lock);
+  }
+  _SendPacketWithCurrentStateAndImgTrunk();
+  _CheckIfEntireImgIsSent();
+}
 void ROV::_UpdateCurrentRxStateFromRxState() {
   _rxstatemutex.lock();
   memcpy(_currentRxState, _rxStatePtr, _rxStateLength);

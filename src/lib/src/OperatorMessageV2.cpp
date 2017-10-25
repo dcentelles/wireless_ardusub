@@ -5,8 +5,8 @@
  *      Author: centelld
  */
 
+#include <dccomms/dccomms.h>
 #include <wireless_ardusub/OperatorMessageV2.h>
-
 namespace wireless_ardusub {
 
 const uint8_t OperatorMessageV2::MessageLength =
@@ -24,6 +24,8 @@ OperatorMessageV2::OperatorMessageV2(uint8_t *_buf) {
 }
 
 void OperatorMessageV2::_Init() {
+  _bigEndian = dccomms::Utils::IsBigEndian();
+
   messageInfo = buffer;
   settingsBuffer = messageInfo + 1;
   orderBuffer = settingsBuffer + HROVSettingsV2::SettingsSize;
@@ -65,13 +67,22 @@ void OperatorMessageV2::SetMoveOrder(TeleopOrderPtr _moveOrder) {
 
 void OperatorMessageV2::SetKeepOrientationOrder(uint16_t orientation) {
   _SetOrderType(OrderType::KeepOrientation);
-  // TODO: check endianess!!
-  *(uint16_t *)orderBuffer = orientation;
+  if (_bigEndian) {
+    *(uint16_t *)orderBuffer = orientation;
+  } else {
+    dccomms::Utils::IntSwitchEndian(orderBuffer, orientation);
+  }
 }
 
 uint16_t OperatorMessageV2::GetKeepOrientationOrder() {
-  // TODO: check endianess!!
   uint16_t value = *(uint16_t *)orderBuffer;
+  uint16_t res;
+  if (_bigEndian) {
+    res = *(uint16_t *)orderBuffer;
+  } else {
+    dccomms::Utils::IntSwitchEndian(&res, *(uint16_t *)orderBuffer);
+  }
+  return res;
   return value;
 }
 

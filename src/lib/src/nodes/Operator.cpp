@@ -52,6 +52,7 @@ Operator::Operator(Ptr<CommsDevice> comms) : txservice(this), rxservice(this) {
   SetLogName("Operator");
 
   desiredStateSet = false;
+  _canTransmit = true;
 }
 
 Operator::~Operator() {
@@ -176,14 +177,19 @@ void Operator::Start() {
   rxservice.Start();
 }
 
+void Operator::DisableTransmission() { _canTransmit = false; }
+void Operator::EnableTransmission() { _canTransmit = true; }
 void Operator::_Work() {}
 
 void Operator::_TxWork() {
   while (!desiredStateSet) {
     std::this_thread::sleep_for(chrono::milliseconds(750));
   }
-  _SendPacketWithDesiredState();
-  std::this_thread::sleep_for(chrono::milliseconds(1000));
+  if (_canTransmit) {
+    _SendPacketWithDesiredState();
+    std::this_thread::sleep_for(chrono::milliseconds(1000));
+  } else
+    std::this_thread::sleep_for(chrono::milliseconds(50));
 }
 
 void Operator::_RxWork() {

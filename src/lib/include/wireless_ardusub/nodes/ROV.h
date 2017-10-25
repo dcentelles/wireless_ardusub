@@ -55,6 +55,8 @@ public:
   void SetRxStateSize(int);
   void SetTxStateSize(int);
 
+  void HoldChannel(bool);
+
 private:
   void _ReinitImageFlags();
   void _WaitForNewOrders();
@@ -66,6 +68,11 @@ private:
   void _SetEndianess();
 
   void _Work(); // for full duplex
+  void _HoldChannelWork();
+
+  bool _holdChannel;
+  std::mutex _holdChannel_mutex;
+  condition_variable _holdChannel_cond;
 
   std::mutex _immutex, _rxstatemutex, _txstatemutex;
   condition_variable _imgInBufferCond;
@@ -79,7 +86,7 @@ private:
 
   Ptr<CommsDevice> _comms;
 
-  ServiceThread<ROV> _service;
+  ServiceThread<ROV> _commsWorker, _holdChannelCommsWorker;
 
   Ptr<SimplePacket> _txdlf;
   Ptr<SimplePacket> _rxdlf;

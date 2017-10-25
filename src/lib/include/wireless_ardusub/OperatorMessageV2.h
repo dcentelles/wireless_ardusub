@@ -68,6 +68,8 @@ private:
                        ORDER_TYPE_MASK = 0x3;
   uint8_t *messageInfo;
   uint8_t *settingsBuffer, *orderBuffer;
+
+  bool _bigEndian;
 };
 
 } /* namespace merbots */

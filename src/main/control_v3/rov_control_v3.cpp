@@ -14,6 +14,7 @@
 #include <image_utils_ros_msgs/EncodingConfig.h>
 #include <mavlink_cpp/mavlink_cpp.h>
 #include <ros/ros.h>
+#include <wireless_ardusub/Constants.h>
 #include <wireless_ardusub/HROVMessage.h>
 #include <wireless_ardusub/OperatorMessageV2.h>
 #include <wireless_ardusub/nodes/ROV.h>
@@ -147,7 +148,15 @@ void mockOrderWork() {
   notifyROVReady();
 }
 
-void keepOrientationWork() {
+void holdChannelWork() {
+  notifyROVBusy();
+  int seconds = holdChannelSeconds + 2;
+  commsNode->HoldChannel(true);
+  this_thread::sleep_for(chrono::seconds(seconds));
+  commsNode->HoldChannel(false);
+  notifyROVReady();
+}
+void keepOrientationWorkLoop() {
   while (1) {
     Log->Debug("Waiting keep orientation order");
     std::unique_lock<std::mutex> lock(keepOrientation_mutex);
@@ -160,7 +169,7 @@ void keepOrientationWork() {
   }
 }
 
-void holdChannelWork() {
+void holdChannelWorkLoop() {
   while (1) {
     Log->Debug("Waiting hold channel order");
     std::unique_lock<std::mutex> lock(holdChannel_mutex);
@@ -168,7 +177,7 @@ void holdChannelWork() {
       holdChannel_cond.wait(lock);
     Log->Debug("Hold channel received");
     holdChannelReceived = false;
-    mockOrderWork();
+    holdChannelWork();
     Log->Debug("Hold channel finished");
   }
 }
@@ -291,8 +300,8 @@ void operatorMsgParserWork() {
 void startWorkers() {
   operatorMsgParserWorker = std::thread(operatorMsgParserWork);
   messageSenderWorker = std::thread(messageSenderWork);
-  holdChannelWorker = std::thread(holdChannelWork);
-  keepOrientationWorker = std::thread(keepOrientationWork);
+  holdChannelWorker = std::thread(holdChannelWorkLoop);
+  keepOrientationWorker = std::thread(keepOrientationWorkLoop);
 }
 
 void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
@@ -369,7 +378,7 @@ int main(int argc, char **argv) {
   startWorkers();
 
   auto stream = dccomms::CreateObject<dccomms_utils::S100Stream>(
-      params.serialPort, SerialPortStream::BAUD_2400);
+      params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
   stream->Open();
 
   commsNode = dccomms::CreateObject<ROV>(stream);
