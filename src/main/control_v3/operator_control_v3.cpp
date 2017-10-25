@@ -413,24 +413,6 @@ void OperatorController::CancelLastOrder(void) {
 
 void OperatorController::ActionWorker(
     const merbots_whrov_msgs::OrderGoalConstPtr &goal) {
-  switch (goal->type) {
-  case 0: // HEADING
-  {
-    Log->info("Heading order received");
-    _currentOperatorMessage_mutex.lock();
-    _currentOperatorMessage->SetKeepOrientationOrder(
-        goal->keep_heading_degrees);
-    _currentOperatorMessage_mutex.unlock();
-  }
-  case 1: // HOLD TIME
-  {
-    Log->info("Hold image channel order received");
-    _currentOperatorMessage_mutex.lock();
-    _currentOperatorMessage->SetHoldChannelOrder(goal->hold_channel_duration);
-    _currentOperatorMessage_mutex.unlock();
-    break;
-  }
-  }
 
   std::unique_lock<std::mutex> lock(_hrovState_mutex);
   _orderFeedback.percent_complete = 5;
@@ -462,6 +444,22 @@ void OperatorController::ActionWorker(
   _currentOperatorMessage_mutex.lock();
   _currentOperatorMessage->SetOrderSeqNumber(_oid);
   _currentOperatorMessage_updated = true;
+
+  switch (goal->type) {
+  case 0: // HEADING
+  {
+    Log->info("Heading order received");
+    _currentOperatorMessage->SetKeepOrientationOrder(
+        goal->keep_heading_degrees);
+  }
+  case 1: // HOLD TIME
+  {
+    Log->info("Hold image channel order received");
+    _currentOperatorMessage->SetHoldChannelOrder(goal->hold_channel_duration);
+    break;
+  }
+  }
+
   _currentOperatorMessage_mutex.unlock();
   _currentOperatorMessage_cond.notify_one();
 
