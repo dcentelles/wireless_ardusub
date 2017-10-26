@@ -13,11 +13,15 @@
 #include <image_utils_ros_msgs/EncodedImg.h>
 #include <image_utils_ros_msgs/EncodingConfig.h>
 #include <mavlink_cpp/mavlink_cpp.h>
+#include <mavros_msgs/VFR_HUD.h>
 #include <ros/ros.h>
+#include <sensor_msgs/Imu.h>
+#include <tf/transform_listener.h>
 #include <wireless_ardusub/Constants.h>
 #include <wireless_ardusub/HROVMessage.h>
 #include <wireless_ardusub/OperatorMessageV2.h>
 #include <wireless_ardusub/nodes/ROV.h>
+#include <wireless_ardusub/utils.hpp>
 
 using namespace cpplogging;
 using namespace std::chrono_literals;
@@ -28,6 +32,10 @@ using namespace std;
 struct Params {
   std::string serialPort, masterUri;
   bool log2Console;
+};
+
+struct HROVPose {
+  double yaw, pitch, roll, Z, X, Y;
 };
 
 static LoggerPtr Log;
@@ -76,6 +84,14 @@ static bool cancelLastOrder;
 static bool executingOrder;
 static std::mutex executingOrder_mutex;
 static std::condition_variable executingOrder_cond;
+
+static ros::Subscriber ardusubNav_sub;
+static ros::Subscriber ardusubHUD_sub;
+
+static HROVPose currentHROVPose;
+static std::mutex currentHROVPose_mutex;
+static std::condition_variable currentHROVPose_cond;
+static bool currentHROVPose_updated;
 
 void notifyHROVMessageUpdated() {
   currentHROVMessage_updated = true;
@@ -248,11 +264,24 @@ void messageSenderWork() {
     currentHROVMessage_updated = false;
   }
 }
+
+double getJoyAxisNormalized(int x) { return 200. / 256 * x; }
+double arduSubXYR(double per) { return per / 0.1; }
+double arduSubZ(double per) { return (per + 100) / 0.2; }
+
 void operatorMsgParserWork() {
   while (1) {
     std::unique_lock<std::mutex> lock(currentOperatorMessage_mutex);
     while (!currentOperatorMessage_updated) {
-      currentOperatorMessage_cond.wait(lock);
+      currentOperatorMessage_cond.wait_for(lock, chrono::milliseconds(2000));
+      double xNorm = getJoyAxisNormalized(0);
+      double yNorm = getJoyAxisNormalized(0);
+      double zNorm = getJoyAxisNormalized(0);
+      double rNorm = getJoyAxisNormalized(0);
+      int x = ceil(arduSubXYR(xNorm));
+      int y = ceil(arduSubXYR(yNorm));
+      int z = ceil(arduSubZ(zNorm));
+      int r = ceil(arduSubXYR(rNorm));
     }
     currentOperatorMessage_updated = false;
 
@@ -283,13 +312,52 @@ void operatorMsgParserWork() {
         currentOperatorMessage->GetOrderType();
     if (lastOrderType == OperatorMessageV2::OrderType::Move) {
       auto lastOrder = currentOperatorMessage->GetMoveOrderCopy();
-      Log->Info("Last orders:\n"
-                "\tx: {}\n"
-                "\ty: {}\n"
-                "\tz: {}\n"
-                "\tr: {}\n",
-                lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
-                lastOrder->GetR());
+
+      std::string modeName = "";
+      switch (lastOrder->GetFlyMode()) {
+      case FLY_MODE::DEPTH_HOLD:
+        modeName = "DEPTH HOLD";
+        control->SetDepthHoldMode();
+        break;
+      case FLY_MODE::STABILIZE:
+        modeName = "STABILIZE";
+        control->SetStabilizeMode();
+        break;
+      case FLY_MODE::MANUAL:
+        modeName = "MANUAL";
+        control->SetManualMode();
+        break;
+      default:
+        break;
+      }
+      Log->Info(
+          "Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
+          lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
+          lastOrder->GetR(), lastOrder->Arm() ? "true" : "false", modeName);
+
+      int x = lastOrder->GetX();
+      int y = lastOrder->GetY();
+      int z = lastOrder->GetZ();
+      int r = lastOrder->GetR();
+      // order:  y = 200/256x
+      // z control: y = 200/1000x - 100
+      // x,y and r control: y = 200/2000x
+
+      double xNorm = getJoyAxisNormalized(x);
+      double yNorm = getJoyAxisNormalized(y);
+      double zNorm = getJoyAxisNormalized(z);
+      double rNorm = getJoyAxisNormalized(r);
+      x = ceil(arduSubXYR(xNorm));
+      y = ceil(arduSubXYR(yNorm));
+      z = ceil(arduSubZ(zNorm));
+      r = ceil(arduSubXYR(rNorm));
+
+      Log->Info(
+          "Manual control: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
+          x, y, z, r, lastOrder->Arm() ? "true" : "false", modeName);
+
+      control->SetManualControl(x, y, z, r);
+      control->Arm(lastOrder->Arm());
     } else {
       handleNewOrder();
     }
@@ -316,12 +384,68 @@ void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
   }
 }
 
+void HandleNewHUDData(const mavros_msgs::VFR_HUD::ConstPtr &msg) {
+  currentHROVMessage_mutex.lock();
+  currentHROVMessage->SetYaw(msg->heading);
+  currentHROVMessage_updated = true;
+  currentHROVMessage_mutex.unlock();
+  currentHROVMessage_cond.notify_one();
+
+  currentHROVPose_mutex.lock();
+  currentHROVPose.yaw = msg->heading;
+  currentHROVPose_updated = true;
+  currentHROVPose_mutex.unlock();
+  currentHROVPose_cond.notify_one();
+}
+
+void HandleNewNavigationData(const sensor_msgs::Imu::ConstPtr &msg) {
+  // the following is not correct! x, y z is the components of a Quaternion, not
+  // the Euler angles.
+
+  tf::Quaternion rotation(msg->orientation.x, msg->orientation.y,
+                          msg->orientation.z, msg->orientation.w);
+
+  tf::Matrix3x3 rotMat(rotation);
+
+  tfScalar yaw, pitch, roll;
+  rotMat.getEulerYPR(yaw, pitch, roll);
+
+  int rx, ry, rz;
+  rx = wireless_ardusub::utils::GetDiscreteYaw(roll);
+  ry = wireless_ardusub::utils::GetDiscreteYaw(pitch);
+  rz = wireless_ardusub::utils::GetDiscreteYaw(yaw);
+
+  rx = rx > 180 ? -(360 - rx) : rx;
+  ry = ry > 180 ? -(360 - ry) : ry;
+  // rz = rz > 180 ? -(360-rz) : rz;
+
+  currentHROVMessage_mutex.lock();
+  // currentHROVMessage->SetYaw (rz);
+  currentHROVMessage->SetX(rx);
+  currentHROVMessage->SetY(ry);
+  currentHROVMessage_updated = true;
+  currentHROVMessage_mutex.unlock();
+  currentHROVMessage_cond.notify_one();
+
+  currentHROVPose_mutex.lock();
+  // currentHROVPose.yaw = 0;
+  currentHROVPose_updated = true;
+  currentHROVPose_mutex.unlock();
+  currentHROVPose_cond.notify_one();
+}
+
 void initROSInterface(int argc, char **argv) {
   ros::NodeHandle nh;
   encodedImage_sub = nh.subscribe<image_utils_ros_msgs::EncodedImg>(
       "encoded_image", 1, boost::bind(handleNewImage, _1));
   encodingConfig_pub =
       nh.advertise<image_utils_ros_msgs::EncodingConfig>("encoding_config", 1);
+
+  ardusubNav_sub = nh.subscribe<sensor_msgs::Imu>(
+      "/mavros/imu/data", 1, boost::bind(HandleNewNavigationData, _1));
+
+  ardusubHUD_sub = nh.subscribe<mavros_msgs::VFR_HUD>(
+      "/mavros/vfr_hud", 1, boost::bind(HandleNewHUDData, _1));
 }
 
 int GetParams() {
@@ -369,6 +493,7 @@ int main(int argc, char **argv) {
 
   control->SetLogName("GCS");
   control->SetLogLevel(info);
+  control->Arm(false);
   control->Start();
   control->LogToConsole(params.log2Console);
 
