@@ -79,6 +79,13 @@ merbots_whrov_msgs::hrov_settings::Ptr HROVSettingsV2::GetROSMsg() {
   return cstate;
 }
 
+void HROVSettingsV2::SetSettings(uint16_t x0, uint16_t y0, uint16_t x1,
+                                 uint16_t y1, uint8_t shift,
+                                 uint16_t img_size) {
+  _SetROIConf(x0, y0, x1, y1, shift);
+  _SetImgSize(img_size);
+}
+
 void HROVSettingsV2::_SetROIConf(uint16_t x0, uint16_t y0, uint16_t x1,
                                  uint16_t y1, uint8_t shift) {
   *roi_shift &= 0x1f;

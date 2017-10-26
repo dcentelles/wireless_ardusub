@@ -14,7 +14,6 @@
 #include <dynamic_reconfigure/server.h>
 #include <image_utils_ros_msgs/EncodedImg.h>
 #include <merbots_whrov_msgs/OrderAction.h>
-#include <merbots_whrov_msgs/hrov_settings.h>
 #include <merbots_whrov_msgs/position.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Joy.h>
@@ -117,7 +116,6 @@ private:
   ros::NodeHandle &_nh;
   ros::Publisher _currentHROVState_pub;
   ros::Publisher _encodedImage_pub;
-  ros::Subscriber _currentSettings_sub;
   dynamic_reconfigure::Server<wireless_ardusub::wireless_teleop_joyConfig>
       _server;
   wireless_ardusub::wireless_teleop_joyConfig _config;
@@ -140,8 +138,6 @@ private:
   void ConfigCallback(wireless_ardusub::wireless_teleop_joyConfig &update,
                       uint32_t level);
   void JoyCallback(const sensor_msgs::Joy::ConstPtr &joy);
-  void NewSettingsReceived(
-      const merbots_whrov_msgs::hrov_settingsConstPtr &_settings);
   void NotifyNewHROVState(bool _hrovReady, int _requestedOID, bool cancelled);
   void StartOrderActionServer() { _orderActionServer.start(); }
   bool CancelRequested(void);
@@ -231,10 +227,6 @@ OperatorController::OperatorController(ros::NodeHandle &nh,
   _encodedImage_pub =
       _nh.advertise<image_utils_ros_msgs::EncodedImg>("encoded_image", 1);
 
-  _currentSettings_sub = _nh.subscribe<merbots_whrov_msgs::hrov_settings>(
-      "desired_hrov_settings", 1,
-      boost::bind(&OperatorController::NewSettingsReceived, this, _1)); //,
-
   _currentOperatorMessage = OperatorMessageV2::Build();
   _currentHROVMessage = HROVMessage::BuildHROVMessage();
 
@@ -242,7 +234,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh,
   _teleopOrder = TeleopOrder::Build();
   _node = CreateObject<Operator>(stream);
   _node->SetLogLevel(LogLevel::info);
-  _node->SetMaxImageTrunkLength(50);
+  _node->SetMaxImageTrunkLength(100);
   _node->SetRxStateSize(HROVMessage::MessageLength);
   _node->SetTxStateSize(OperatorMessageV2::MessageLength);
 
@@ -289,17 +281,6 @@ void OperatorController::Spin() {
     // enforce a max publish rate
     loop.sleep();
   }
-}
-
-void OperatorController::NewSettingsReceived(
-    const merbots_whrov_msgs::hrov_settingsConstPtr &msg) {
-  Log->info("New settings received");
-  _settings->SetFromROSMsg(msg);
-  _currentOperatorMessage_mutex.lock();
-  _currentOperatorMessage->SetSettings(_settings);
-  _currentOperatorMessage_mutex.unlock();
-  _currentOperatorMessage_updated = true;
-  _currentOperatorMessage_cond.notify_one();
 }
 
 void OperatorController::ConfigCallback(
@@ -483,6 +464,16 @@ void OperatorController::ActionWorker(
                                                  5);
     break;
   }
+  case 2: // UPDATE IMAGE SETTINGS
+    Log->info("Update image Settings order received");
+    auto nbytes =
+        _node->GetImageSizeFromNumberOfPackets(goal->image_config.size);
+    _settings->SetSettings(goal->image_config.roi_x0, goal->image_config.roi_y0,
+                           goal->image_config.roi_x1, goal->image_config.roi_y1,
+                           goal->image_config.roi_shift, nbytes);
+    _settings->EncodeMonoVersion(goal->image_config.encode_mono);
+    _currentOperatorMessage->SetUpdateImageSettingsOrder(_settings);
+    break;
   }
 
   _currentOperatorMessage_mutex.unlock();
@@ -533,11 +524,6 @@ void OperatorController::ActionWorker(
   _orderActionServer.publishFeedback(_orderFeedback);
 
   switch (goal->type) {
-  case 0: // HEADING
-  {
-    // do nothing
-    break;
-  }
   case 1: // HOLD TIME
   {
     _node->DisableTransmission();
@@ -545,6 +531,8 @@ void OperatorController::ActionWorker(
     _node->EnableTransmission();
     break;
   }
+  default:
+    break;
   }
 
   while (!_hrovReady) {

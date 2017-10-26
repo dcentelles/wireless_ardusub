@@ -63,6 +63,13 @@ Operator::~Operator() {
   delete buffer;
 }
 
+int Operator::GetImageSizeFromNumberOfPackets(int npackets) {
+  int fcsSize = 2;
+  int res = maxImgTrunkLength * (npackets - 1) + maxImgTrunkLength - fcsSize;
+  res = res >= 0 ? res : 0;
+  return res;
+}
+
 void Operator::SetMaxImageTrunkLength(int _len) {
   _len = _len <= MAX_IMG_TRUNK_LENGTH ? _len : MAX_IMG_TRUNK_LENGTH;
   maxImgTrunkLength = _len;

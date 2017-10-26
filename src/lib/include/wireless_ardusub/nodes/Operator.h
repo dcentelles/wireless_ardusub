@@ -53,6 +53,7 @@ public:
   virtual void LogToConsole(bool);
   virtual void LogToFile(const string &filename);
 
+  int GetImageSizeFromNumberOfPackets(int npackets);
   void SetMaxImageTrunkLength(int);
   void SetRxStateSize(int);
   void SetTxStateSize(int);

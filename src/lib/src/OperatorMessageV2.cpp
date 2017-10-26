@@ -10,7 +10,7 @@
 namespace wireless_ardusub {
 
 const uint8_t OperatorMessageV2::MessageLength =
-    TeleopOrder::Size + HROVSettingsV2::SettingsSize + 1 // flags
+    HROVSettingsV2::SettingsSize + 1 // flags
     ;
 
 OperatorMessageV2::OperatorMessageV2() {
@@ -27,8 +27,7 @@ void OperatorMessageV2::_Init() {
   _bigEndian = dccomms::Utils::IsBigEndian();
 
   messageInfo = buffer;
-  settingsBuffer = messageInfo + 1;
-  orderBuffer = settingsBuffer + HROVSettingsV2::SettingsSize;
+  orderBuffer = messageInfo + 1;
 
   *messageInfo = 0;
 }
@@ -44,14 +43,16 @@ void OperatorMessageV2::SetHoldChannelOrder(uint8_t v) {
   *orderBuffer = v;
 }
 
-HROVSettingsV2Ptr OperatorMessageV2::GetSettingsCopy() {
+HROVSettingsV2Ptr OperatorMessageV2::GetImageSettingsOrderCopy() {
   auto settings = HROVSettingsV2::Build();
-  settings->UpdateFromBuffer(settingsBuffer);
+  settings->UpdateFromBuffer(orderBuffer);
   return settings;
 }
 
-void OperatorMessageV2::SetSettings(HROVSettingsV2Ptr _settings) {
-  _settings->GetBufferCopy(settingsBuffer);
+void OperatorMessageV2::SetUpdateImageSettingsOrder(
+    HROVSettingsV2Ptr _settings) {
+  _SetOrderType(OrderType::UpdateImageSettings);
+  _settings->GetBufferCopy(orderBuffer);
 }
 
 TeleopOrderPtr OperatorMessageV2::GetMoveOrderCopy() {

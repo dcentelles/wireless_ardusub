@@ -34,6 +34,9 @@ public:
   void SetFromROSMsg(const merbots_whrov_msgs::hrov_settings::ConstPtr &);
   merbots_whrov_msgs::hrov_settings::Ptr GetROSMsg();
 
+  void SetSettings(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1,
+                   uint8_t shift, uint16_t img_size);
+
   void UpdateFromBuffer(uint8_t *);
   void GetBufferCopy(uint8_t *);
 

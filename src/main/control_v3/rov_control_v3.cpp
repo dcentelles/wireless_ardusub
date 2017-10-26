@@ -198,6 +198,31 @@ void holdChannelWorkLoop() {
   }
 }
 
+void updateImageSettings(const HROVSettingsV2Ptr &lastSettings) {
+  notifyROVBusy();
+  Log->Info("Current image settings:\n"
+            "\t(x0,y0): ({},{})\n"
+            "\t(x1,y1): ({},{})\n)"
+            "\tsize: {} bytes"
+            "\tROI shift: {}"
+            "\tEncode mono version: {}",
+            lastSettings->GetROIX0(), lastSettings->GetROIY0(),
+            lastSettings->GetROIX1(), lastSettings->GetROIY1(),
+            lastSettings->GetImgSize(), lastSettings->GetROIShift(),
+            lastSettings->EncodeMonoVersion() ? "true" : "false");
+
+  emsg.max_size = lastSettings->GetImgSize();
+  emsg.shift = lastSettings->GetROIShift();
+  emsg.x0 = lastSettings->GetROIX0();
+  emsg.y0 = lastSettings->GetROIY0();
+  emsg.x1 = lastSettings->GetROIX1();
+  emsg.y1 = lastSettings->GetROIY1();
+  emsg.encode8bversion = lastSettings->EncodeMonoVersion();
+
+  encodingConfig_pub.publish(emsg);
+  notifyROVReady();
+}
+
 void CancelLastOrder() {
   std::unique_lock<std::mutex> lock(executingOrder_mutex);
   while (executingOrder) {
@@ -209,8 +234,6 @@ void CancelLastOrder() {
 }
 
 void handleNewOrder() {
-  Log->Debug("Locking HROV message buffer");
-
   currentHROVMessage_mutex.lock();
   auto eSeq = currentHROVMessage->GetExpectedOrderSeqNumber();
   currentHROVMessage_mutex.unlock();
@@ -245,14 +268,18 @@ void handleNewOrder() {
         keepOrientation_cond.notify_one();
         break;
       }
+      case OperatorMessageV2::OrderType::UpdateImageSettings: {
+        auto lastSettings = currentOperatorMessage->GetImageSettingsOrderCopy();
+        updateImageSettings(lastSettings);
+        break;
+      }
       }
       currentHROVMessage_mutex.lock();
       currentHROVMessage->IncExpectedOrderSeqNumber();
       currentHROVMessage_mutex.unlock();
+      notifyHROVMessageUpdated();
     }
   }
-  notifyHROVMessageUpdated();
-  Log->Debug("Notify HROV message buffer updated");
 }
 void messageSenderWork() {
   while (1) {
@@ -284,29 +311,6 @@ void operatorMsgParserWork() {
       int r = ceil(arduSubXYR(rNorm));
     }
     currentOperatorMessage_updated = false;
-
-    auto lastSettings = currentOperatorMessage->GetSettingsCopy();
-
-    Log->Info("Current image settings:\n"
-              "\t(x0,y0): ({},{})\n"
-              "\t(x1,y1): ({},{})\n)"
-              "\tsize: {} bytes"
-              "\tROI shift: {}"
-              "\tEncode mono version: {}",
-              lastSettings->GetROIX0(), lastSettings->GetROIY0(),
-              lastSettings->GetROIX1(), lastSettings->GetROIY1(),
-              lastSettings->GetImgSize(), lastSettings->GetROIShift(),
-              lastSettings->EncodeMonoVersion() ? "true" : "false");
-
-    emsg.max_size = lastSettings->GetImgSize();
-    emsg.shift = lastSettings->GetROIShift();
-    emsg.x0 = lastSettings->GetROIX0();
-    emsg.y0 = lastSettings->GetROIY0();
-    emsg.x1 = lastSettings->GetROIX1();
-    emsg.y1 = lastSettings->GetROIY1();
-    emsg.encode8bversion = lastSettings->EncodeMonoVersion();
-
-    encodingConfig_pub.publish(emsg);
 
     OperatorMessageV2::OrderType lastOrderType =
         currentOperatorMessage->GetOrderType();
@@ -524,7 +528,7 @@ int main(int argc, char **argv) {
   commsNode->SetLogLevel(LogLevel::info);
   commsNode->SetRxStateSize(OperatorMessageV2::MessageLength);
   commsNode->SetTxStateSize(HROVMessage::MessageLength);
-  commsNode->SetMaxImageTrunkLength(50);
+  commsNode->SetMaxImageTrunkLength(100);
   commsNode->Start();
 
   currentHROVMessage->Ready(true);

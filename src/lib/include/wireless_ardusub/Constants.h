@@ -19,7 +19,7 @@ namespace wireless_ardusub {
 #define MAX_HROVSTATE_LENGHT 40
 #define BES_LENGTH 3
 
-static const int S100_MAX_BITRATE = 1900;
+static const int S100_MAX_BITRATE = 1950;
 }
 
 #endif /* INCLUDE_WIRELESS_ARDUSUB_CONSTANTS_H_ */

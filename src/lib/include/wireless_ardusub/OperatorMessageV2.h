@@ -45,6 +45,7 @@ public:
     Move,
     KeepOrientation,
     HoldChannel,
+    UpdateImageSettings,
     OtherNotImplemented
   };
   OrderType GetOrderType();
@@ -56,8 +57,8 @@ public:
   void SetKeepOrientationOrder(uint16_t orientation);
   uint16_t GetKeepOrientationOrder();
 
-  HROVSettingsV2Ptr GetSettingsCopy();
-  void SetSettings(HROVSettingsV2Ptr);
+  HROVSettingsV2Ptr GetImageSettingsOrderCopy();
+  void SetUpdateImageSettingsOrder(HROVSettingsV2Ptr);
 
 private:
   void _SetOrderType(OrderType);
@@ -65,9 +66,9 @@ private:
   uint8_t buffer[MAX_HROVSTATE_LENGHT];
 
   const static uint8_t ORDER_SEQ_FLAG = 0x80, CANCEL_LAST_ORDER_FLAGH = 0x40,
-                       ORDER_TYPE_MASK = 0x3;
+                       ORDER_TYPE_MASK = 0xf;
   uint8_t *messageInfo;
-  uint8_t *settingsBuffer, *orderBuffer;
+  uint8_t *orderBuffer;
 
   bool _bigEndian;
 };
