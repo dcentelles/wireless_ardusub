@@ -14,12 +14,12 @@
 #include <dynamic_reconfigure/server.h>
 #include <image_utils_ros_msgs/EncodedImg.h>
 #include <merbots_whrov_msgs/OrderAction.h>
-#include <merbots_whrov_msgs/position.h>
+#include <merbots_whrov_msgs/state.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Joy.h>
 #include <vector>
 #include <wireless_ardusub/Constants.h>
-#include <wireless_ardusub/HROVMessage.h>
+#include <wireless_ardusub/HROVMessageV2.h>
 #include <wireless_ardusub/OperatorMessageV2.h>
 #include <wireless_ardusub/nodes/Constants.h>
 #include <wireless_ardusub/nodes/Operator.h>
@@ -105,7 +105,7 @@ private:
   bool _currentOperatorMessage_updated;
 
   std::mutex _currentHROVMessage_mutex;
-  Ptr<HROVMessage> _currentHROVMessage;
+  Ptr<HROVMessageV2> _currentHROVMessage;
   std::condition_variable _currentHROVMessage_cond;
   bool _currentHROVMessage_updated;
 
@@ -153,19 +153,19 @@ void OperatorController::StartWorkers() {
       while (!_currentHROVMessage_updated) {
         _currentHROVMessage_cond.wait(lock);
       }
-      merbots_whrov_msgs::position position;
+      merbots_whrov_msgs::state state;
 
       auto oid = _currentHROVMessage->GetExpectedOrderSeqNumber();
       auto cancelled = _currentHROVMessage->LastOrderCancelledFlag();
       auto ready = _currentHROVMessage->Ready();
-      position.roll = _currentHROVMessage->GetX();
-      position.pitch = _currentHROVMessage->GetY();
-      position.altitude = _currentHROVMessage->GetZ();
-      position.orientation = _currentHROVMessage->GetYaw();
+      state.roll = _currentHROVMessage->GetRoll();
+      state.pitch = _currentHROVMessage->GetPitch();
+      state.altitude = _currentHROVMessage->GetAltitude();
+      state.heading = _currentHROVMessage->GetHeading();
       _currentHROVMessage_updated = false;
       lock.unlock();
 
-      _currentHROVState_pub.publish(position);
+      _currentHROVState_pub.publish(state);
       NotifyNewHROVState(ready, oid, cancelled);
     }
   });
@@ -222,20 +222,20 @@ OperatorController::OperatorController(ros::NodeHandle &nh,
   _encodedImgMsg.img.reserve(wireless_ardusub::teleop_v3::MAX_IMG_SIZE);
 
   _currentHROVState_pub =
-      _nh.advertise<merbots_whrov_msgs::position>("current_hrov_position", 1);
+      _nh.advertise<merbots_whrov_msgs::state>("current_hrov_state", 1);
 
   _encodedImage_pub =
       _nh.advertise<image_utils_ros_msgs::EncodedImg>("encoded_image", 1);
 
   _currentOperatorMessage = OperatorMessageV2::Build();
-  _currentHROVMessage = HROVMessage::BuildHROVMessage();
+  _currentHROVMessage = HROVMessageV2::BuildHROVMessageV2();
 
   _settings = HROVSettingsV2::Build();
   _teleopOrder = TeleopOrder::Build();
   _node = CreateObject<Operator>(stream);
   _node->SetLogLevel(LogLevel::info);
   _node->SetMaxImageTrunkLength(100);
-  _node->SetRxStateSize(HROVMessage::MessageLength);
+  _node->SetRxStateSize(HROVMessageV2::MessageLength);
   _node->SetTxStateSize(OperatorMessageV2::MessageLength);
 
   _node->SetImageReceivedCallback([this](Operator &op) {
@@ -486,7 +486,7 @@ void OperatorController::ActionWorker(
   _orderFeedback.message = "Waiting for the order acknowledgment...";
   _orderActionServer.publishFeedback(_orderFeedback);
 
-  int nextOID = wireless_ardusub::HROVMessage::GetNextOrderSeqNumber(_oid);
+  int nextOID = wireless_ardusub::HROVMessageV2::GetNextOrderSeqNumber(_oid);
   hrovStateLock.lock();
 
   while (_requestedOID != nextOID) {

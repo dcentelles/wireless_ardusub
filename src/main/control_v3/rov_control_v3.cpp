@@ -18,7 +18,7 @@
 #include <sensor_msgs/Imu.h>
 #include <tf/transform_listener.h>
 #include <wireless_ardusub/Constants.h>
-#include <wireless_ardusub/HROVMessage.h>
+#include <wireless_ardusub/HROVMessageV2.h>
 #include <wireless_ardusub/OperatorMessageV2.h>
 #include <wireless_ardusub/nodes/ROV.h>
 #include <wireless_ardusub/utils.hpp>
@@ -56,8 +56,8 @@ static int yVel;
 static int zVel;
 static int rVel;
 
-static dccomms::Ptr<HROVMessage> currentHROVMessage =
-    dccomms::CreateObject<HROVMessage>();
+static dccomms::Ptr<HROVMessageV2> currentHROVMessageV2 =
+    dccomms::CreateObject<HROVMessageV2>();
 static bool currentHROVMessage_updated;
 static std::mutex currentHROVMessage_mutex;
 static std::condition_variable currentHROVMessage_cond;
@@ -109,8 +109,8 @@ void notifyLastOrderCancellationAndRobotReady() {
   executingOrder_mutex.unlock();
 
   currentHROVMessage_mutex.lock();
-  currentHROVMessage->LastOrderCancelledFlag(true);
-  currentHROVMessage->Ready(true);
+  currentHROVMessageV2->LastOrderCancelledFlag(true);
+  currentHROVMessageV2->Ready(true);
   notifyHROVMessageUpdated();
   currentHROVMessage_mutex.unlock();
 }
@@ -122,7 +122,7 @@ void notifyROVBusy() {
   executingOrder_mutex.unlock();
 
   currentHROVMessage_mutex.lock();
-  currentHROVMessage->Ready(false);
+  currentHROVMessageV2->Ready(false);
   notifyHROVMessageUpdated();
   currentHROVMessage_mutex.unlock();
 }
@@ -134,7 +134,7 @@ void notifyROVReady() {
   executingOrder_mutex.unlock();
 
   currentHROVMessage_mutex.lock();
-  currentHROVMessage->Ready(true);
+  currentHROVMessageV2->Ready(true);
   notifyHROVMessageUpdated();
   currentHROVMessage_mutex.unlock();
 }
@@ -216,7 +216,7 @@ int angleDistance(int alpha, int beta) {
   return distance;
 }
 
-void keepOrientationIteration(void) {
+void keepHeadingIteration(void) {
   int currentHeading = std::round(currentHROVPose.heading);
   int ahdiff = angleDistance(currentHeading, desiredOrientation);
 
@@ -241,15 +241,29 @@ void keepOrientationIteration(void) {
   }
 }
 
-void keepOrientationWorkLoop() {
+void keepHeadingWorkLoop() {
+  bool keepingHeading = false;
   while (1) {
     std::unique_lock<std::mutex> lock(keepOrientation_mutex);
     while (!keepOrientation) {
+      currentHROVMessage_mutex.lock();
+      keepingHeading = false;
+      currentHROVMessageV2->KeepingHeadingFlag(false);
+      currentHROVMessage_mutex.unlock();
+      currentHROVMessage_cond.notify_one();
       Log->Debug("Keep orientation disabled");
       keepOrientation_cond.wait(lock);
       Log->Debug("Keep orientation received!");
     }
-    keepOrientationIteration();
+    if (!keepingHeading) {
+      currentHROVMessage_mutex.lock();
+      keepingHeading = true;
+      currentHROVMessageV2->KeepingHeadingFlag(true);
+      currentHROVMessage_mutex.unlock();
+      currentHROVMessage_cond.notify_one();
+    }
+
+    keepHeadingIteration();
     this_thread::sleep_for(chrono::milliseconds(200));
   }
 }
@@ -304,7 +318,7 @@ void CancelLastOrder() {
 
 void handleNewOrder() {
   currentHROVMessage_mutex.lock();
-  auto eSeq = currentHROVMessage->GetExpectedOrderSeqNumber();
+  auto eSeq = currentHROVMessageV2->GetExpectedOrderSeqNumber();
   currentHROVMessage_mutex.unlock();
 
   auto orderType = currentOperatorMessage->GetOrderType();
@@ -350,7 +364,7 @@ void handleNewOrder() {
       }
       }
       currentHROVMessage_mutex.lock();
-      currentHROVMessage->IncExpectedOrderSeqNumber();
+      currentHROVMessageV2->IncExpectedOrderSeqNumber();
       currentHROVMessage_mutex.unlock();
       notifyHROVMessageUpdated();
     }
@@ -362,7 +376,7 @@ void messageSenderWork() {
     while (!currentHROVMessage_updated) {
       currentHROVMessage_cond.wait(lock);
     }
-    commsNode->SetCurrentTxState(currentHROVMessage->GetBuffer());
+    commsNode->SetCurrentTxState(currentHROVMessageV2->GetBuffer());
     currentHROVMessage_updated = false;
   }
 }
@@ -438,7 +452,7 @@ void startWorkers() {
   operatorMsgParserWorker = std::thread(operatorMsgParserWork);
   messageSenderWorker = std::thread(messageSenderWork);
   holdChannelWorker = std::thread(holdChannelWorkLoop);
-  keepOrientationWorker = std::thread(keepOrientationWorkLoop);
+  keepOrientationWorker = std::thread(keepHeadingWorkLoop);
 }
 
 void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
@@ -456,7 +470,7 @@ void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
 
 void HandleNewHUDData(const mavros_msgs::VFR_HUD::ConstPtr &msg) {
   currentHROVMessage_mutex.lock();
-  currentHROVMessage->SetYaw(msg->heading);
+  currentHROVMessageV2->SetHeading(msg->heading);
   currentHROVMessage_updated = true;
   currentHROVMessage_mutex.unlock();
   currentHROVMessage_cond.notify_one();
@@ -491,8 +505,8 @@ void HandleNewNavigationData(const sensor_msgs::Imu::ConstPtr &msg) {
 
   currentHROVMessage_mutex.lock();
   // currentHROVMessage->SetYaw (rz);
-  currentHROVMessage->SetX(rx);
-  currentHROVMessage->SetY(ry);
+  currentHROVMessageV2->SetRoll(rx);
+  currentHROVMessageV2->SetPitch(ry);
   currentHROVMessage_updated = true;
   currentHROVMessage_mutex.unlock();
   currentHROVMessage_cond.notify_one();
@@ -593,12 +607,12 @@ int main(int argc, char **argv) {
   commsNode->LogToConsole(params.log2Console);
   commsNode->SetLogLevel(LogLevel::info);
   commsNode->SetRxStateSize(OperatorMessageV2::MessageLength);
-  commsNode->SetTxStateSize(HROVMessage::MessageLength);
+  commsNode->SetTxStateSize(HROVMessageV2::MessageLength);
   commsNode->SetMaxImageTrunkLength(100);
   commsNode->Start();
 
-  currentHROVMessage->Ready(true);
-  commsNode->SetCurrentTxState(currentHROVMessage->GetBuffer());
+  currentHROVMessageV2->Ready(true);
+  commsNode->SetCurrentTxState(currentHROVMessageV2->GetBuffer());
 
   try {
 
