@@ -162,6 +162,7 @@ void OperatorController::StartWorkers() {
       state.pitch = _currentHROVMessage->GetPitch();
       state.altitude = _currentHROVMessage->GetAltitude();
       state.heading = _currentHROVMessage->GetHeading();
+      state.keepingHeading = _currentHROVMessage->KeepingHeadingFlag();
       _currentHROVMessage_updated = false;
       lock.unlock();
 
@@ -530,7 +531,9 @@ void OperatorController::ActionWorker(
   case 1: // HOLD TIME
   {
     _node->DisableTransmission();
+    hrovStateLock.unlock();
     this_thread::sleep_for(chrono::seconds(goal->hold_channel_duration + 5));
+    hrovStateLock.lock();
     _node->EnableTransmission();
     break;
   }
