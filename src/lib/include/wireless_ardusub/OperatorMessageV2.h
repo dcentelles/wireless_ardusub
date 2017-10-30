@@ -46,6 +46,7 @@ public:
     KeepOrientation,
     HoldChannel,
     UpdateImageSettings,
+    DisableKeepOrientation,
     OtherNotImplemented
   };
   OrderType GetOrderType();
@@ -54,8 +55,9 @@ public:
   void SetNoOrder();
   uint8_t GetHoldChannelDuration();
   void SetHoldChannelOrder(uint8_t);
-  void SetKeepOrientationOrder(uint16_t orientation);
-  uint16_t GetKeepOrientationOrder();
+  void SetEnableKeepOrientationOrder(uint16_t orientation);
+  uint16_t GetKeepOrientationValue();
+  void SetDisableKeepOrientationOrder();
 
   HROVSettingsV2Ptr GetImageSettingsOrderCopy();
   void SetUpdateImageSettingsOrder(HROVSettingsV2Ptr);

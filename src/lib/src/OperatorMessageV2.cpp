@@ -66,7 +66,7 @@ void OperatorMessageV2::SetMoveOrder(TeleopOrderPtr _moveOrder) {
   memcpy(orderBuffer, _moveOrder->GetBuffer(), TeleopOrder::Size);
 }
 
-void OperatorMessageV2::SetKeepOrientationOrder(uint16_t orientation) {
+void OperatorMessageV2::SetEnableKeepOrientationOrder(uint16_t orientation) {
   _SetOrderType(OrderType::KeepOrientation);
   if (_bigEndian) {
     *(uint16_t *)orderBuffer = orientation;
@@ -75,7 +75,7 @@ void OperatorMessageV2::SetKeepOrientationOrder(uint16_t orientation) {
   }
 }
 
-uint16_t OperatorMessageV2::GetKeepOrientationOrder() {
+uint16_t OperatorMessageV2::GetKeepOrientationValue() {
   uint16_t value = *(uint16_t *)orderBuffer;
   uint16_t res;
   if (_bigEndian) {
@@ -84,7 +84,10 @@ uint16_t OperatorMessageV2::GetKeepOrientationOrder() {
     dccomms::Utils::IntSwitchEndian(&res, *(uint16_t *)orderBuffer);
   }
   return res;
-  return value;
+}
+
+void OperatorMessageV2::SetDisableKeepOrientationOrder() {
+  _SetOrderType(OrderType::DisableKeepOrientation);
 }
 
 OperatorMessageV2::OrderType OperatorMessageV2::GetOrderType() {

@@ -35,7 +35,7 @@ struct Params {
 };
 
 struct HROVPose {
-  double yaw, pitch, roll, Z, X, Y;
+  double yaw, pitch, roll, Z, X, Y, heading;
 };
 
 static LoggerPtr Log;
@@ -50,6 +50,11 @@ static dccomms::Ptr<OperatorMessageV2> currentOperatorMessage =
 static bool currentOperatorMessage_updated;
 static std::mutex currentOperatorMessage_mutex;
 static std::condition_variable currentOperatorMessage_cond;
+static TeleopOrderPtr lastOrder;
+static int xVel;
+static int yVel;
+static int zVel;
+static int rVel;
 
 static dccomms::Ptr<HROVMessage> currentHROVMessage =
     dccomms::CreateObject<HROVMessage>();
@@ -70,7 +75,7 @@ static image_utils_ros_msgs::EncodingConfig emsg;
 static int lastImageSize = -1;
 
 static uint16_t desiredOrientation;
-static bool keepOrientationReceived;
+static bool keepOrientation;
 static std::mutex keepOrientation_mutex;
 static std::condition_variable keepOrientation_cond;
 
@@ -134,6 +139,25 @@ void notifyROVReady() {
   currentHROVMessage_mutex.unlock();
 }
 
+double getJoyAxisNormalized(int x) { return 200. / 256 * x; }
+double arduSubXYR(double per) { return per / 0.1; }
+double arduSubZ(double per) { return (per + 100) / 0.2; }
+
+void stopRobot() {
+  int x = ceil(arduSubXYR(0));
+  int y = ceil(arduSubXYR(0));
+  int z = ceil(arduSubZ(0));
+  int r = ceil(arduSubXYR(0));
+  control->SetManualControl(x, y, z, r);
+}
+
+void moveYaw(double per) {
+  if (lastOrder) {
+    rVel = ceil(arduSubXYR(per));
+    control->SetManualControl(xVel, yVel, zVel, rVel);
+  }
+}
+
 void mockOrderWork() {
   notifyROVBusy();
 
@@ -172,16 +196,61 @@ void holdChannelWork() {
   commsNode->HoldChannel(false);
   notifyROVReady();
 }
+
+/**
+   Length (angular) of a shortest way between two angles.
+  It will be in range [0, 180].
+
+ private int distance(int alpha, int beta) {
+     int phi = Math.abs(beta - alpha) % 360;       // This is either the
+ distance or 360 - distance
+     int distance = phi > 180 ? 360 - phi : phi;
+     return distance;
+ }
+*/
+
+int angleDistance(int alpha, int beta) {
+  int phi = std::abs(beta - alpha) %
+            360; // This is either the distance or 360 - distance
+  int distance = phi > 180 ? 360 - phi : phi;
+  return distance;
+}
+
+void keepOrientationIteration(void) {
+  int currentHeading = std::round(currentHROVPose.heading);
+  int ahdiff = angleDistance(currentHeading, desiredOrientation);
+
+  bool right;
+  if (ahdiff + currentHeading % 360 == desiredOrientation)
+    right = false;
+  else
+    right = true;
+
+  double vel = 30;
+  if (ahdiff > 1) {
+    if (right) {
+      Log->Info("Turn left");
+      moveYaw(-vel);
+    } else {
+      Log->Info("Turn right");
+      moveYaw(vel);
+    }
+  } else {
+    Log->Info("do not turn");
+    moveYaw(0);
+  }
+}
+
 void keepOrientationWorkLoop() {
   while (1) {
-    Log->Debug("Waiting keep orientation order");
     std::unique_lock<std::mutex> lock(keepOrientation_mutex);
-    while (!keepOrientationReceived)
+    while (!keepOrientation) {
+      Log->Debug("Keep orientation disabled");
       keepOrientation_cond.wait(lock);
-    Log->Debug("Keep orientation received!");
-    keepOrientationReceived = false;
-    mockOrderWork();
-    Log->Debug("Keep orientation task finished");
+      Log->Debug("Keep orientation received!");
+    }
+    keepOrientationIteration();
+    this_thread::sleep_for(chrono::milliseconds(200));
   }
 }
 
@@ -261,10 +330,16 @@ void handleNewOrder() {
         break;
       }
       case OperatorMessageV2::OrderType::KeepOrientation: {
-        desiredOrientation = currentOperatorMessage->GetKeepOrientationOrder();
+        desiredOrientation = currentOperatorMessage->GetKeepOrientationValue();
         Log->Info("Received keep orientation order: {} degrees",
                   desiredOrientation);
-        keepOrientationReceived = true;
+        keepOrientation = true;
+        keepOrientation_cond.notify_one();
+        break;
+      }
+      case OperatorMessageV2::OrderType::DisableKeepOrientation: {
+        Log->Info("Received disable keep orientation order");
+        keepOrientation = false;
         keepOrientation_cond.notify_one();
         break;
       }
@@ -292,30 +367,19 @@ void messageSenderWork() {
   }
 }
 
-double getJoyAxisNormalized(int x) { return 200. / 256 * x; }
-double arduSubXYR(double per) { return per / 0.1; }
-double arduSubZ(double per) { return (per + 100) / 0.2; }
-
 void operatorMsgParserWork() {
   while (1) {
     std::unique_lock<std::mutex> lock(currentOperatorMessage_mutex);
     while (!currentOperatorMessage_updated) {
       currentOperatorMessage_cond.wait_for(lock, chrono::milliseconds(2000));
-      double xNorm = getJoyAxisNormalized(0);
-      double yNorm = getJoyAxisNormalized(0);
-      double zNorm = getJoyAxisNormalized(0);
-      double rNorm = getJoyAxisNormalized(0);
-      int x = ceil(arduSubXYR(xNorm));
-      int y = ceil(arduSubXYR(yNorm));
-      int z = ceil(arduSubZ(zNorm));
-      int r = ceil(arduSubXYR(rNorm));
+      stopRobot();
     }
     currentOperatorMessage_updated = false;
 
     OperatorMessageV2::OrderType lastOrderType =
         currentOperatorMessage->GetOrderType();
     if (lastOrderType == OperatorMessageV2::OrderType::Move) {
-      auto lastOrder = currentOperatorMessage->GetMoveOrderCopy();
+      lastOrder = currentOperatorMessage->GetMoveOrderCopy();
 
       std::string modeName = "";
       switch (lastOrder->GetFlyMode()) {
@@ -351,16 +415,18 @@ void operatorMsgParserWork() {
       double yNorm = getJoyAxisNormalized(y);
       double zNorm = getJoyAxisNormalized(z);
       double rNorm = getJoyAxisNormalized(r);
-      x = ceil(arduSubXYR(xNorm));
-      y = ceil(arduSubXYR(yNorm));
-      z = ceil(arduSubZ(zNorm));
-      r = ceil(arduSubXYR(rNorm));
+      xVel = ceil(arduSubXYR(xNorm));
+      yVel = ceil(arduSubXYR(yNorm));
+      zVel = ceil(arduSubZ(zNorm));
+      if (!keepOrientation)
+        rVel = ceil(arduSubXYR(rNorm));
 
       Log->Info(
           "Manual control: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
-          x, y, z, r, lastOrder->Arm() ? "true" : "false", modeName);
+          xVel, yVel, zVel, rVel, lastOrder->Arm() ? "true" : "false",
+          modeName);
 
-      control->SetManualControl(x, y, z, r);
+      control->SetManualControl(xVel, yVel, zVel, rVel);
       control->Arm(lastOrder->Arm());
     } else {
       handleNewOrder();
@@ -396,7 +462,7 @@ void HandleNewHUDData(const mavros_msgs::VFR_HUD::ConstPtr &msg) {
   currentHROVMessage_cond.notify_one();
 
   currentHROVPose_mutex.lock();
-  currentHROVPose.yaw = msg->heading;
+  currentHROVPose.heading = msg->heading;
   currentHROVPose_updated = true;
   currentHROVPose_mutex.unlock();
   currentHROVPose_cond.notify_one();

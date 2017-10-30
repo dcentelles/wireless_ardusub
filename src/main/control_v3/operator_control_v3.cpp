@@ -453,8 +453,11 @@ void OperatorController::ActionWorker(
   case 0: // HEADING
   {
     Log->info("Heading order received");
-    _currentOperatorMessage->SetKeepOrientationOrder(
-        goal->keep_heading_degrees);
+    if (goal->keep_heading_degrees > 360)
+      _currentOperatorMessage->SetDisableKeepOrientationOrder();
+    else
+      _currentOperatorMessage->SetEnableKeepOrientationOrder(
+          goal->keep_heading_degrees);
     break;
   }
   case 1: // HOLD TIME
