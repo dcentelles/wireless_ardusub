@@ -7,13 +7,23 @@
   </node>
 
   <arg name="namespace" default="/"/>
-  <arg name="log2Console" default="true"/>
+  <arg name="log2Console" default="false"/>
   <arg name="port" default="/dev/ttyUSB0"/>
+  
+  <include file="$(find image_utils_ros)/launch/decoder.launch">
+     <arg name="log2Console" value="$(arg log2Console)"/>
+     <arg name="namespace" value="$(arg namespace)"/>
+     <arg name="decodedImage" value="camera"/>
+     <arg name="viewer" value="false"/>
+  </include>
 
   <group ns="$(arg namespace)">
+
      <node pkg="wireless_ardusub" type="op_v3" name="op_v3" output="screen" required="true">
 	<param name="port" value="$(arg port)" type="string"/>
 	<param name="log2Console" value="$(arg log2Console)" type="bool"/>
      </node>
+
+     <node pkg="whrov_hmi" type="whrov_hmi" name="whrov_hmi" output="screen" required="true"/>
   </group>
 </launch>
