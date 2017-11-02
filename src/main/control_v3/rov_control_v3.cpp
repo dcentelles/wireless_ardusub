@@ -13,6 +13,7 @@
 #include <image_utils_ros_msgs/EncodedImg.h>
 #include <image_utils_ros_msgs/EncodingConfig.h>
 #include <mavlink_cpp/mavlink_cpp.h>
+#include <mavros_msgs/State.h>
 #include <mavros_msgs/VFR_HUD.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Imu.h>
@@ -66,6 +67,8 @@ static std::thread operatorMsgParserWorker;
 static std::thread messageSenderWorker;
 static std::thread keepOrientationWorker;
 static std::thread holdChannelWorker;
+
+static ros::Subscriber ardusubState_sub;
 
 static ros::Subscriber encodedImage_sub;
 static ros::Publisher encodingConfig_pub;
@@ -518,6 +521,26 @@ void HandleNewNavigationData(const sensor_msgs::Imu::ConstPtr &msg) {
   currentHROVPose_cond.notify_one();
 }
 
+void HandleNewArdusubState(const mavros_msgs::State::ConstPtr &msg) {
+  ARDUSUB_NAV_MODE mode;
+  if (msg->mode == "MANUAL") {
+    mode = ARDUSUB_NAV_MODE::NAV_MANUAL;
+  } else if (msg->mode == "STABILIZE") {
+    mode = ARDUSUB_NAV_MODE::NAV_STABILIZE;
+  } else if (msg->mode == "ALT_HOLD") {
+    mode = ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD;
+  } else
+    mode = ARDUSUB_NAV_MODE::NAV_UNKNOWN;
+
+  bool armed = msg->armed;
+  currentHROVMessage_mutex.lock();
+  currentHROVMessageV2->SetNavMode(mode);
+  currentHROVMessageV2->Armed(armed);
+  currentHROVMessage_updated = true;
+  currentHROVMessage_mutex.unlock();
+  currentHROVMessage_cond.notify_one();
+}
+
 void initROSInterface(int argc, char **argv) {
   ros::NodeHandle nh;
   encodedImage_sub = nh.subscribe<image_utils_ros_msgs::EncodedImg>(
@@ -530,6 +553,9 @@ void initROSInterface(int argc, char **argv) {
 
   ardusubHUD_sub = nh.subscribe<mavros_msgs::VFR_HUD>(
       "/mavros/vfr_hud", 1, boost::bind(HandleNewHUDData, _1));
+
+  ardusubState_sub = nh.subscribe<mavros_msgs::State>(
+      "/mavros/state", 1, boost::bind(HandleNewArdusubState, _1));
 }
 
 int GetParams() {

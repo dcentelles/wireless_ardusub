@@ -163,6 +163,8 @@ void OperatorController::StartWorkers() {
       state.altitude = _currentHROVMessage->GetAltitude();
       state.heading = _currentHROVMessage->GetHeading();
       state.keepingHeading = _currentHROVMessage->KeepingHeadingFlag();
+      state.navMode = (int)_currentHROVMessage->GetNavMode();
+      state.armed = _currentHROVMessage->Armed();
       _currentHROVMessage_updated = false;
       lock.unlock();
 

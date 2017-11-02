@@ -20,6 +20,13 @@ namespace wireless_ardusub {
 #define BES_LENGTH 3
 
 static const int S100_MAX_BITRATE = 1950;
+
+enum ARDUSUB_NAV_MODE {
+  NAV_MANUAL = 0,
+  NAV_STABILIZE,
+  NAV_DEPTH_HOLD,
+  NAV_UNKNOWN
+};
 }
 
 #endif /* INCLUDE_WIRELESS_ARDUSUB_CONSTANTS_H_ */

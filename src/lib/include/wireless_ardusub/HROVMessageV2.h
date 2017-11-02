@@ -59,12 +59,22 @@ public:
   void KeepingHeadingFlag(bool);
   bool KeepingHeadingFlag();
 
+  ARDUSUB_NAV_MODE GetNavMode();
+  void SetNavMode(ARDUSUB_NAV_MODE);
+
+  void Armed(bool);
+  bool Armed();
+
 private:
   void _Init();
   uint8_t buffer[MAX_HROVSTATE_LENGHT];
 
   const static uint8_t READY_FLAG = 0x80, NEXT_ORDER_SEQ_FLAG = 0x40,
-                       LAST_ORDER_CANCELLED_FLAG = 0x20, KEEPING_HEADING_FLAG = 0x10;
+                       LAST_ORDER_CANCELLED_FLAG = 0x20,
+                       KEEPING_HEADING_FLAG = 0x10, ARMED_FLAG = 0x8;
+
+  const static uint8_t NAV_MODE_MASK = 0x3;
+
   uint8_t *flags, *pose;
 
   bool bigEndian;

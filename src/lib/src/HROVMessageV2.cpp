@@ -173,4 +173,20 @@ int16_t HROVMessageV2::GetAltitude() {
   return res;
 }
 
+void HROVMessageV2::SetNavMode(ARDUSUB_NAV_MODE mode) {
+  *flags = (*flags & ~NAV_MODE_MASK | mode);
+}
+
+ARDUSUB_NAV_MODE HROVMessageV2::GetNavMode() {
+  unsigned int mode = *flags & NAV_MODE_MASK;
+  return mode >= 0 && mode < NAV_UNKNOWN ? (ARDUSUB_NAV_MODE)mode
+                                         : ARDUSUB_NAV_MODE::NAV_UNKNOWN;
+}
+
+bool HROVMessageV2::Armed() { return *flags & ARMED_FLAG; }
+
+void HROVMessageV2::Armed(bool v) {
+  *flags = v ? *flags | ARMED_FLAG : *flags & ~ARMED_FLAG;
+}
+
 } /* namespace merbots */
