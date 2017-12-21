@@ -219,6 +219,12 @@ int angleDistance(int alpha, int beta) {
   return distance;
 }
 
+double getKeepHeadingDecrease(int ahdiff) {
+  uint32_t diff = abs(ahdiff);
+  double m = 30. / 180;
+  return diff * m;
+}
+
 void keepHeadingIteration(void) {
   int currentHeading = std::round(currentHROVPose.heading);
   int ahdiff = angleDistance(currentHeading, desiredOrientation);
@@ -229,7 +235,7 @@ void keepHeadingIteration(void) {
   else
     right = true;
 
-  double vel = 30;
+  double vel = getKeepHeadingDecrease(30);
   if (ahdiff > 1) {
     if (right) {
       Log->Info("Turn left");
