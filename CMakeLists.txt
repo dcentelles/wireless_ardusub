@@ -69,29 +69,6 @@ generate_dynamic_reconfigure_options(
   cfg/wireless_teleop_joy.cfg
 )
 
-catkin_package(
-   CATKIN_DEPENDS
-    roscpp
-    rospy
-    std_msgs
-    actionlib_msgs
-    message_runtime
-    cv_bridge
-    image_transport
-    merbots_whrov_msgs
-    visp_ros
-    mavros_msgs
-  image_utils_ros_msgs
-    sensor_msgs
-  sensor_msgs
-)
-
-roslaunch_add_file_check(launch)
-
-
-###########
-## Build ##
-###########
 
 ####### HANDLE DEPENDENCIES ######
 
@@ -105,22 +82,30 @@ ENDFOREACH()
 
 ######## END HANDLE DEPENDENCIES ######
 
-## Add support for C++11, supported in ROS Kinetic and newer
-add_definitions(-fPIC -std=c++14)
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 # include_directories(include)
 
 SET(SRCPATH src/)
-include_directories(
-  ${SRCPATH}lib/include
-  ${catkin_INCLUDE_DIRS}
-)
 
 SET(${PROJECT_NAME}_INCLUDE_DIRS
-    "src/lib/include"
-    "modules")
+    ${catkin_INCLUDE_DIRS}
+    ${SRCPATH}lib/include
+    modules
+    ${${TELEROBOTICS_GIT}_INCLUDE_DIRS}
+    ${${DCCOMMS_UTILS_GIT}_INCLUDE_DIRS}
+    ${${MAVLINK_CPP_GIT}_INCLUDE_DIRS}
+    ${${IMAGE-UTILS_GIT}_INCLUDE_DIRS}
+    )
+
+
+## Add support for C++11, supported in ROS Kinetic and newer
+add_definitions(-fPIC -std=c++14)
+
+include_directories(
+  ${${PROJECT_NAME}_INCLUDE_DIRS}
+)
 SET(${PROJECT_NAME}_CPP_FILES
                         ${SRCPATH}lib/src/HROVSettings.cpp
                         ${SRCPATH}lib/src/HROVSettingsV2.cpp
@@ -137,7 +122,6 @@ SET(${PROJECT_NAME}_CPP_FILES
 
 add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
 target_link_libraries(${PROJECT_NAME} ${TELEROBOTICS_GIT})
-target_include_directories(${PROJECT_NAME} PUBLIC ${${PROJECT_NAME}_INCLUDE_DIRS})
 
 SET(ROV_V1 rov_v1)
 SET(OP_V1 op_v1)
@@ -147,9 +131,9 @@ SET(ROV_V3 rov_v3)
 SET(OP_V3 op_v3)
 
 add_executable (${ROV_V1} ${SRCPATH}main/control_v1/rov_control_v1.cpp)
-target_link_libraries(${ROV_V1} ${TELEROBOTICS_GIT} ${IMAGE-UTILS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
+target_link_libraries(${ROV_V1} ${IMAGE-UTILS_GIT} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
 add_executable (${OP_V1} ${SRCPATH}main/control_v1/operator_control_v1.cpp)
-target_link_libraries(${OP_V1} ${TELEROBOTICS_GIT} ${IMAGE-UTILS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
+target_link_libraries(${OP_V1} ${IMAGE-UTILS_GIT}  ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
 
 add_executable (${OP_V2} ${SRCPATH}main/control_v2/operator_control_v2.cpp)
 target_link_libraries(${OP_V2} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
@@ -168,5 +152,33 @@ install(TARGETS ${PROJECT_NAME} ${ROVA}
         RUNTIME DESTINATION "bin"
         )
 install(DIRECTORY "${SRCPATH}lib/include/${PROJECT_NAME}" DESTINATION "include")
+
+
+catkin_package(
+   LIBRARIES
+    ${PROJECT_NAME}
+    ${${TELEROBOTICS_GIT}_LIBRARIES}
+    ${${DCCOMMS_UTILS_GIT}_LIBRARIES}
+    ${${MAVLINK_CPP_GIT}_LIBRARIES}
+    ${${IMAGE-UTILS_GIT}_LIBRARIES}
+   INCLUDE_DIRS
+    ${${PROJECT_NAME}_INCLUDE_DIRS}
+   CATKIN_DEPENDS
+    roscpp
+    rospy
+    std_msgs
+    actionlib_msgs
+    message_runtime
+    cv_bridge
+    image_transport
+    merbots_whrov_msgs
+    visp_ros
+    mavros_msgs
+    image_utils_ros_msgs
+    sensor_msgs
+    sensor_msgs
+)
+
+roslaunch_add_file_check(launch)
 
 message(STATUS "End ${PROJECT_NAME_ORIG}")
