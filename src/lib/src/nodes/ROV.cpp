@@ -19,10 +19,7 @@ void defaultOrdersReceivedCallback(ROV &rovcamera) {
   // Nothing to do
 }
 
-ROV::ROV(Ptr<CommsDevice> comms)
-    : _commsWorker(this), _holdChannelCommsWorker(this) {
-  // TODO Auto-generated constructor stub
-  _comms = comms;
+ROV::ROV() : _commsWorker(this), _holdChannelCommsWorker(this) {
   _SetEndianess();
   _rxStateLength = MAX_NODE_STATE_LENGTH;
   _txStateLength = MAX_NODE_STATE_LENGTH;
@@ -157,10 +154,18 @@ void ROV::CancelLastImage() {
   std::unique_lock<std::mutex> lock(_immutex);
   _ReinitImageFlags();
 }
+
+void ROV::SetComms(Ptr<CommsDevice> comms) { _comms = comms; }
+
+uint32_t ROV::GetTxPacketSize() {
+  return _txStateLength + _imgTrunkInfoLength + _maxImgTrunkLength;
+}
+
+uint32_t ROV::GetRxPacketSize() { return _rxStateLength; }
+
 void ROV::Start() {
-  _txdlf = CreateObject<SimplePacket>(
-      _txStateLength + _imgTrunkInfoLength + _maxImgTrunkLength, _dlfcrctype);
-  _rxdlf = CreateObject<SimplePacket>(_rxStateLength, _dlfcrctype);
+  _txdlf = CreateObject<SimplePacket>(GetTxPacketSize(), _dlfcrctype);
+  _rxdlf = CreateObject<SimplePacket>(GetRxPacketSize(), _dlfcrctype);
 
   _txbuffer = _txdlf->GetPayloadBuffer();
   _rxbuffer = _rxdlf->GetPayloadBuffer();

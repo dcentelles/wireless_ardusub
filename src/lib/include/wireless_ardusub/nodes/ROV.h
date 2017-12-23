@@ -25,8 +25,13 @@ using namespace teleop_v3;
 
 class ROV : public Loggable {
 public:
-  ROV(Ptr<CommsDevice> _comms);
+  ROV();
   virtual ~ROV();
+
+  void SetComms(Ptr<CommsDevice> _comms);
+  uint32_t GetRxPacketSize();
+  uint32_t GetTxPacketSize();
+
   void SendImage(void *, unsigned int);
 
   // typedef std::function<void(void*, unsigned int)> f_data;

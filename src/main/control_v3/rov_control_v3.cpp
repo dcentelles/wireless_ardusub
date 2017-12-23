@@ -32,7 +32,7 @@ using namespace std;
 
 struct Params {
   std::string serialPort, masterUri;
-  bool log2Console;
+  bool log2Console, useCommsService;
 };
 
 struct HROVPose {
@@ -591,6 +591,16 @@ int GetParams() {
 
   params.log2Console = log2Console;
 
+  bool useCommsService;
+  if (!nh.getParam("commsService", log2Console)) {
+    ROS_ERROR("Failed to get param commsService");
+    return 1;
+  } else {
+    Log->Info("commsService: {}", useCommsService);
+  }
+
+  params.useCommsService = useCommsService;
+
   return 0;
 }
 int main(int argc, char **argv) {
@@ -616,12 +626,42 @@ int main(int argc, char **argv) {
   Log->SetLogLevel(LogLevel::debug);
 
   startWorkers();
+  commsNode = dccomms::CreateObject<ROV>();
 
-  auto stream = dccomms::CreateObject<dccomms_utils::S100Stream>(
-      params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
-  stream->Open();
+  commsNode->SetRxStateSize(OperatorMessageV2::MessageLength);
+  commsNode->SetTxStateSize(HROVMessageV2::MessageLength);
+  commsNode->SetMaxImageTrunkLength(100);
 
-  commsNode = dccomms::CreateObject<ROV>(stream);
+  dccomms::Ptr<CommsDevice> stream;
+  if (!params.useCommsService) {
+    Log->Info("CommsDevice type: dccomms_utils::S100Stream");
+    stream = dccomms::CreateObject<dccomms_utils::S100Stream>(
+        params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
+    stream->Open();
+  } else {
+    Log->Info("CommsDevice type: dccomms::CommsDeviceService");
+    auto rxPacketSize = commsNode->GetRxPacketSize();
+    auto txPacketSize = commsNode->GetTxPacketSize();
+    Log->Info("Transmitted packet size: {} bytes.\n"
+              "Received packet size: {} bytes.",
+              txPacketSize, rxPacketSize);
+
+    std::string dccommsId = "rov";
+    Log->Info("dccomms ID: {}", dccommsId);
+
+    dccomms::Ptr<IPacketBuilder> pb =
+        dccomms::CreateObject<SimplePacketBuilder>(rxPacketSize);
+
+    dccomms::Ptr<CommsDeviceService> commsService;
+    commsService = dccomms::CreateObject<CommsDeviceService>(pb);
+    commsService->SetCommsDeviceId(dccommsId);
+    commsService->Start();
+  }
+  commsNode->SetComms(stream);
+
+  commsNode->LogToConsole(params.log2Console);
+  commsNode->SetLogLevel(LogLevel::info);
+
   commsNode->SetOrdersReceivedCallback([](ROV &receiver) {
     Log->Info("Orders received!");
     uint8_t state[OperatorMessageV2::MessageLength];
@@ -635,12 +675,6 @@ int main(int argc, char **argv) {
 
     Log->Info("Orders updated");
   });
-
-  commsNode->LogToConsole(params.log2Console);
-  commsNode->SetLogLevel(LogLevel::info);
-  commsNode->SetRxStateSize(OperatorMessageV2::MessageLength);
-  commsNode->SetTxStateSize(HROVMessageV2::MessageLength);
-  commsNode->SetMaxImageTrunkLength(100);
   commsNode->Start();
 
   currentHROVMessageV2->Ready(true);

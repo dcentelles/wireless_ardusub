@@ -32,6 +32,8 @@ void SimplePacket::Read(Stream *stream) {
   stream->Read(_payload, PAYLOAD_SIZE + FCS_SIZE);
 }
 
+void SimplePacket::PayloadUpdated(uint32_t payloadSize) { UpdateFCS(); }
+
 void SimplePacket::GetPayload(void *copy, int size) {
   auto copySize = PAYLOAD_SIZE < size ? PAYLOAD_SIZE : size;
   memcpy(copy, _payload, copySize);

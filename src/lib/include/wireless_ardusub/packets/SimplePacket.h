@@ -15,11 +15,13 @@ public:
   uint32_t GetPayloadSize();
   int GetPacketSize();
   void Read(Stream *comms);
+  void PayloadUpdated(uint32_t payloadSize);
 
   bool PacketIsOk();
 
   void GetPayload(void *copy, int size);
   void SetPayload(const void *data, int size);
+
 
   void UpdateFCS();
 
