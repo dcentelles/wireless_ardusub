@@ -592,11 +592,11 @@ int GetParams() {
   params.log2Console = log2Console;
 
   bool useCommsService;
-  if (!nh.getParam("commsService", log2Console)) {
-    ROS_ERROR("Failed to get param commsService");
+  if (!nh.getParam("useCommsService", useCommsService)) {
+    ROS_ERROR("Failed to get param useCommsService");
     return 1;
   } else {
-    Log->Info("commsService: {}", useCommsService);
+    Log->Info("useCommsService: {}", useCommsService);
   }
 
   params.useCommsService = useCommsService;
@@ -632,32 +632,13 @@ int main(int argc, char **argv) {
   commsNode->SetTxStateSize(HROVMessageV2::MessageLength);
   commsNode->SetMaxImageTrunkLength(100);
 
-  dccomms::Ptr<CommsDevice> stream;
   if (!params.useCommsService) {
     Log->Info("CommsDevice type: dccomms_utils::S100Stream");
-    stream = dccomms::CreateObject<dccomms_utils::S100Stream>(
+    dccomms::Ptr<CommsDevice> stream = dccomms::CreateObject<dccomms_utils::S100Stream>(
         params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
     stream->Open();
-  } else {
-    Log->Info("CommsDevice type: dccomms::CommsDeviceService");
-    auto rxPacketSize = commsNode->GetRxPacketSize();
-    auto txPacketSize = commsNode->GetTxPacketSize();
-    Log->Info("Transmitted packet size: {} bytes.\n"
-              "Received packet size: {} bytes.",
-              txPacketSize, rxPacketSize);
-
-    std::string dccommsId = "rov";
-    Log->Info("dccomms ID: {}", dccommsId);
-
-    dccomms::Ptr<IPacketBuilder> pb =
-        dccomms::CreateObject<SimplePacketBuilder>(rxPacketSize);
-
-    dccomms::Ptr<CommsDeviceService> commsService;
-    commsService = dccomms::CreateObject<CommsDeviceService>(pb);
-    commsService->SetCommsDeviceId(dccommsId);
-    commsService->Start();
+    commsNode->SetComms(stream);
   }
-  commsNode->SetComms(stream);
 
   commsNode->LogToConsole(params.log2Console);
   commsNode->SetLogLevel(LogLevel::info);

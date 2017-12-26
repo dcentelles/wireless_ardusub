@@ -25,9 +25,13 @@ using namespace teleop_v3;
 
 class Operator : public Loggable {
 public:
-  Operator(Ptr<CommsDevice> comms);
+  Operator();
   virtual ~Operator();
   void SetDesiredState(const void *data);
+  void SetComms(Ptr<CommsDevice> comms);
+
+  uint32_t GetRxPacketSize();
+  uint32_t GetTxPacketSize();
 
   // http://stackoverflow.com/questions/2298242/callback-functions-in-c
   /*
@@ -45,13 +49,6 @@ public:
   void GetLastConfirmedState(void *);
 
   void Start();
-
-  virtual void SetLogLevel(cpplogging::LogLevel);
-  virtual void SetLogName(string name);
-  virtual void FlushLog();
-  virtual void FlushLogOn(LogLevel);
-  virtual void LogToConsole(bool);
-  virtual void LogToFile(const string &filename);
 
   int GetImageSizeFromNumberOfPackets(int npackets);
   void SetMaxImageTrunkLength(int);

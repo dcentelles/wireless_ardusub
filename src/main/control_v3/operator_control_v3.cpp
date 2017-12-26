@@ -30,7 +30,7 @@ using namespace wireless_ardusub;
 
 struct Params {
   std::string serialPort, masterUri;
-  bool log2Console;
+  bool log2Console, useCommsService;
 };
 
 static Params params;
@@ -63,12 +63,22 @@ int GetParams() {
 
   params.log2Console = log2Console;
 
+  bool useCommsService;
+  if (!nh.getParam("useCommsService", useCommsService)) {
+    ROS_ERROR("Failed to get param useCommsService");
+    return 1;
+  } else {
+    Log->Info("useCommsService: {}", useCommsService);
+  }
+
+  params.useCommsService = useCommsService;
+
   return 0;
 }
 
 class OperatorController : public Logger {
 public:
-  OperatorController(ros::NodeHandle &nh, Ptr<CommsDevice> stream);
+  OperatorController(ros::NodeHandle &nh);
   void Spin();
 
 private:
@@ -199,8 +209,7 @@ void OperatorController::StartWorkers() {
   });
 }
 
-OperatorController::OperatorController(ros::NodeHandle &nh,
-                                       Ptr<CommsDevice> stream)
+OperatorController::OperatorController(ros::NodeHandle &nh)
     : _orderActionServer(
           nh, "order", boost::bind(&OperatorController::ActionWorker, this, _1),
           false),
@@ -235,11 +244,18 @@ OperatorController::OperatorController(ros::NodeHandle &nh,
 
   _settings = HROVSettingsV2::Build();
   _teleopOrder = TeleopOrder::Build();
-  _node = CreateObject<Operator>(stream);
+  _node = CreateObject<Operator>();
   _node->SetLogLevel(LogLevel::info);
   _node->SetMaxImageTrunkLength(100);
   _node->SetRxStateSize(HROVMessageV2::MessageLength);
   _node->SetTxStateSize(OperatorMessageV2::MessageLength);
+
+  if (!params.useCommsService) {
+    auto s100Stream = CreateObject<dccomms_utils::S100Stream>(
+        params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
+    s100Stream->Open();
+    _node->SetComms(s100Stream);
+  }
 
   _node->SetImageReceivedCallback([this](Operator &op) {
     Log->info("New Image received!");
@@ -591,12 +607,8 @@ int main(int argc, char **argv) {
   GetParams();
 
   Log->LogToConsole(params.log2Console);
-  auto stream = CreateObject<dccomms_utils::S100Stream>(
-      params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
-  stream->Open();
-
   ros::NodeHandle nh;
-  OperatorController teleop(nh, stream);
+  OperatorController teleop(nh);
   teleop.LogToConsole(params.log2Console);
 
   teleop.Spin();

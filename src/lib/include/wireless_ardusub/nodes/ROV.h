@@ -49,13 +49,6 @@ public:
   void SetChecksumType(FCS fcs);
   void Start();
 
-  virtual void SetLogLevel(cpplogging::LogLevel);
-  virtual void SetLogName(string name);
-  virtual void FlushLog();
-  virtual void FlushLogOn(LogLevel);
-  virtual void LogToConsole(bool);
-  virtual void LogToFile(const string &filename);
-
   void SetMaxImageTrunkLength(int);
   void SetRxStateSize(int);
   void SetTxStateSize(int);

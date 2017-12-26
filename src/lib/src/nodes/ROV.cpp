@@ -70,36 +70,6 @@ void ROV::SetRxStateSize(int _len) {
   Log->debug("Set a new Rx-State length: {} bytes", _len);
 }
 
-void ROV::SetLogLevel(cpplogging::LogLevel _level) {
-  Loggable::SetLogLevel(_level);
-  _comms->SetLogLevel(_level);
-}
-
-void ROV::SetLogName(string name) {
-  Loggable::SetLogName(name);
-  _comms->SetLogName(name + ":Comms");
-}
-
-void ROV::LogToConsole(bool c) {
-  Loggable::LogToConsole(c);
-  _comms->LogToConsole(c);
-}
-
-void ROV::LogToFile(const string &filename) {
-  Loggable::LogToFile(filename);
-  _comms->LogToFile(filename + "_service");
-}
-
-void ROV::FlushLog() {
-  Loggable::FlushLog();
-  _comms->FlushLog();
-}
-
-void ROV::FlushLogOn(LogLevel level) {
-  Loggable::FlushLogOn(level);
-  _comms->FlushLogOn(level);
-}
-
 void ROV::SetChecksumType(FCS fcs) { _dlfcrctype = fcs; }
 
 void ROV::SendImage(void *_buf, unsigned int _length) {
@@ -180,6 +150,27 @@ void ROV::Start() {
   _rxStatePtr = _rxbuffer;
 
   _holdChannel = false;
+
+  if (!_comms) {
+    Log->info("CommsDevice type: dccomms::CommsDeviceService");
+    auto rxPacketSize = GetRxPacketSize();
+    auto txPacketSize = GetTxPacketSize();
+    Log->info("Transmitted packet size: {} bytes.\n"
+              "Received packet size: {} bytes.",
+              txPacketSize, rxPacketSize);
+
+    std::string dccommsId = "rov";
+    Log->info("dccomms ID: {}", dccommsId);
+
+    dccomms::Ptr<IPacketBuilder> pb =
+        dccomms::CreateObject<SimplePacketBuilder>(rxPacketSize);
+
+    dccomms::Ptr<CommsDeviceService> commsService;
+    commsService = dccomms::CreateObject<CommsDeviceService>(pb);
+    commsService->SetCommsDeviceId(dccommsId);
+    commsService->Start();
+    _comms = commsService;
+  }
   _commsWorker.Start();
   _holdChannelCommsWorker.Start();
 }

@@ -39,7 +39,10 @@ private:
 
 class SimplePacketBuilder : public IPacketBuilder {
 public:
-  SimplePacketBuilder(int payloadSize, FCS fcs = CRC16) {}
+  SimplePacketBuilder(int payloadSize, FCS fcs = CRC16) {
+    _payloadSize = payloadSize;
+    _fcs = fcs;
+  }
   PacketPtr CreateFromBuffer(void *buffer) {
     auto pkt = CreateObject<SimplePacket>(_payloadSize, _fcs);
     pkt->CopyFromRawBuffer(buffer);

@@ -17,7 +17,7 @@ void defaultImageReceivedCallback(Operator &rovOperator) {}
 
 void defaultStateReceivedCallback(Operator &rovOperator) {}
 
-Operator::Operator(Ptr<CommsDevice> comms) : txservice(this), rxservice(this) {
+Operator::Operator() : txservice(this), rxservice(this) {
   rxbuffer = 0;
   imgTrunkPtr = 0;
   txbuffer = 0;
@@ -25,7 +25,6 @@ Operator::Operator(Ptr<CommsDevice> comms) : txservice(this), rxservice(this) {
   currentImgPtr = 0;
   rxStatePtr = 0;
   txStatePtr = 0;
-  _comms = comms;
 
   bigEndian = DataLinkFrame::IsBigEndian();
   imgTrunkInfoLength = IMG_TRUNK_INFO_SIZE;
@@ -48,9 +47,6 @@ Operator::Operator(Ptr<CommsDevice> comms) : txservice(this), rxservice(this) {
   imageReceivedCallback = &defaultImageReceivedCallback;
   stateReceivedCallback = &defaultStateReceivedCallback;
 
-  _comms->SetLogName("Operator:Comms");
-  SetLogName("Operator");
-
   desiredStateSet = false;
   _canTransmit = true;
 }
@@ -62,6 +58,8 @@ Operator::~Operator() {
     rxservice.Stop();
   delete buffer;
 }
+
+void Operator::SetComms(Ptr<CommsDevice> comms) { _comms = comms; }
 
 int Operator::GetImageSizeFromNumberOfPackets(int npackets) {
   int fcsSize = 2;
@@ -100,36 +98,6 @@ void Operator::_UpdateTxStateSize(int _len) {
   beginLastImgPtr = beginImgPtr + MAX_IMG_SIZE;
 }
 
-void Operator::SetLogLevel(cpplogging::LogLevel _level) {
-  Loggable::SetLogLevel(_level);
-  _comms->SetLogLevel(_level);
-}
-
-void Operator::SetLogName(string name) {
-  Loggable::SetLogName(name);
-  _comms->SetLogName(name + ":CommsDeviceService");
-}
-
-void Operator::LogToConsole(bool c) {
-  Loggable::LogToConsole(c);
-  _comms->LogToConsole(c);
-}
-
-void Operator::LogToFile(const string &filename) {
-  Loggable::LogToFile(filename);
-  _comms->LogToFile(filename + "_service");
-}
-
-void Operator::FlushLog() {
-  Loggable::FlushLog();
-  _comms->FlushLog();
-}
-
-void Operator::FlushLogOn(LogLevel level) {
-  Loggable::FlushLogOn(level);
-  _comms->FlushLogOn(level);
-}
-
 int Operator::GetLastReceivedImage(void *data) {
   int imgSize;
   immutex.lock();
@@ -161,10 +129,15 @@ void Operator::SetStateReceivedCallback(f_notification _callback) {
   stateReceivedCallback = _callback;
 }
 
+uint32_t Operator::GetTxPacketSize() { return txStateLength; }
+
+uint32_t Operator::GetRxPacketSize() {
+  return rxStateLength + imgTrunkInfoLength + maxImgTrunkLength;
+}
+
 void Operator::Start() {
-  txdlf = CreateObject<SimplePacket>(txStateLength, dlfcrctype);
-  rxdlf = CreateObject<SimplePacket>(
-      rxStateLength + imgTrunkInfoLength + maxImgTrunkLength, dlfcrctype);
+  txdlf = CreateObject<SimplePacket>(GetTxPacketSize(), dlfcrctype);
+  rxdlf = CreateObject<SimplePacket>(GetRxPacketSize(), dlfcrctype);
 
   auto txdlbuffer = txdlf->GetPayloadBuffer();
   auto rxdlbuffer = rxdlf->GetPayloadBuffer();
@@ -180,6 +153,26 @@ void Operator::Start() {
 
   currentImgPtr = beginImgPtr;
 
+  if (!_comms) {
+    Log->info("CommsDevice type: dccomms::CommsDeviceService");
+    auto rxPacketSize = GetRxPacketSize();
+    auto txPacketSize = GetTxPacketSize();
+    Log->info("Transmitted packet size: {} bytes.\n"
+              "Received packet size: {} bytes.",
+              txPacketSize, rxPacketSize);
+
+    std::string dccommsId = "operator";
+    Log->info("dccomms ID: {}", dccommsId);
+
+    dccomms::Ptr<IPacketBuilder> pb =
+        dccomms::CreateObject<SimplePacketBuilder>(rxPacketSize);
+
+    dccomms::Ptr<CommsDeviceService> commsService;
+    commsService = dccomms::CreateObject<CommsDeviceService>(pb);
+    commsService->SetCommsDeviceId(dccommsId);
+    commsService->Start();
+    _comms = commsService;
+  }
   txservice.Start();
   rxservice.Start();
 }
