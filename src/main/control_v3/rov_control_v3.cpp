@@ -466,9 +466,9 @@ void startWorkers() {
 
 void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
   if (!commsNode->SendingCurrentImage()) {
-    Log->Info("Sending the new captured image... ({} bytes)", msg->img.size());
     lastImageSize =
         emsg.max_size <= msg->img.size() ? emsg.max_size : msg->img.size();
+    Log->Info("Sending the new captured image... ({} bytes)", lastImageSize);
     commsNode->SendImage((void *)msg->img.data(), lastImageSize);
   } else {
     if (lastImageSize != emsg.max_size) {

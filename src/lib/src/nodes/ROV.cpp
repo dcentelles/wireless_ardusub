@@ -168,6 +168,7 @@ void ROV::Start() {
     dccomms::Ptr<CommsDeviceService> commsService;
     commsService = dccomms::CreateObject<CommsDeviceService>(pb);
     commsService->SetCommsDeviceId(dccommsId);
+    commsService->SetLogLevel(LogLevel::info);
     commsService->Start();
     _comms = commsService;
   }
@@ -236,11 +237,9 @@ void ROV::SetCurrentTxState(void *src) {
 }
 
 void ROV::_SendPacketWithCurrentStateAndImgTrunk() {
-  // TODO: Prepare the next packet with the next image's trunk and send it
-  // unsigned long a1 = (unsigned long) endImgPtr;
-  // unsigned long a0 = (unsigned long) currentImgPtr;
   if (_comms->BusyTransmitting()) {
-    Log->critical("TX: possible bug: device busy transmitting at init..");
+    if (!_holdChannel)
+      Log->critical("TX: possible bug: device busy transmitting before next packet build");
     return;
   }
   if (_txStateSet) {

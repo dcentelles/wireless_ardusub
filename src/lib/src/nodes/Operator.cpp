@@ -170,6 +170,7 @@ void Operator::Start() {
     dccomms::Ptr<CommsDeviceService> commsService;
     commsService = dccomms::CreateObject<CommsDeviceService>(pb);
     commsService->SetCommsDeviceId(dccommsId);
+    commsService->SetLogLevel(LogLevel::info);
     commsService->Start();
     _comms = commsService;
   }
@@ -293,9 +294,7 @@ void Operator::_SendPacketWithDesiredState() {
       *_comms << txdlf;
       while (_comms->BusyTransmitting())
         ;
-    } else
-      Log->critical("TX: device busy transmitting after wating for the current "
-                    "rov state");
+    }
   } else {
     Log->warn("TX: desired state is not set yet");
     Utils::Sleep(1000);

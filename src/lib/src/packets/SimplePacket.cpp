@@ -17,8 +17,7 @@ void SimplePacket::_Init() {
 }
 
 void SimplePacket::CopyFromRawBuffer(void *buffer) {
-  _SetBuffer(buffer);
-  _Init();
+  memcpy(GetBuffer(), buffer, _packetSize);
 }
 
 inline uint8_t *SimplePacket::GetPayloadBuffer() { return _payload; }
