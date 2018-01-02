@@ -30,7 +30,7 @@ using namespace wireless_ardusub;
 
 struct Params {
   std::string serialPort, masterUri;
-  bool log2Console, useCommsService;
+  bool log2Console, useCommsService, log2File;
 };
 
 static Params params;
@@ -73,6 +73,15 @@ int GetParams() {
 
   params.useCommsService = useCommsService;
 
+  bool log2File;
+  if (!nh.getParam("log2File", log2File)) {
+    ROS_ERROR("Failed to get param log2File");
+    return 1;
+  } else {
+    Log->Info("log2File: {}", log2File);
+  }
+
+  params.log2File = log2File;
   return 0;
 }
 
@@ -250,6 +259,10 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
   _node->SetRxStateSize(HROVMessageV2::MessageLength);
   _node->SetTxStateSize(OperatorMessageV2::MessageLength);
 
+  if (params.log2File) {
+    _node->LogToFile("op_v3_comms_node");
+  }
+
   if (!params.useCommsService) {
     auto s100Stream = CreateObject<dccomms_utils::S100Stream>(
         params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
@@ -400,7 +413,7 @@ void OperatorController::JoyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
     break;
   }
 
-  Log->info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
+  Info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
             _teleopOrder->GetX(), _teleopOrder->GetY(), _teleopOrder->GetZ(),
             _teleopOrder->GetR(), _teleopOrder->Arm() ? "true" : "false",
             modeName);
@@ -603,6 +616,7 @@ void OperatorController::ActionWorker(
 int main(int argc, char **argv) {
   ros::init(argc, argv, "operator_control_v3");
   Log = CreateLogger("operator_control_v3:main");
+  Log->SetLogLevel(LogLevel::info);
   Log->Info("Init");
   GetParams();
 
@@ -610,6 +624,11 @@ int main(int argc, char **argv) {
   ros::NodeHandle nh;
   OperatorController teleop(nh);
   teleop.LogToConsole(params.log2Console);
+  teleop.SetLogLevel(LogLevel::info);
+  if (params.log2File) {
+    Log->LogToFile("op_v3_main");
+    teleop.LogToFile("op_v3_control");
+  }
 
   teleop.Spin();
   return 0;

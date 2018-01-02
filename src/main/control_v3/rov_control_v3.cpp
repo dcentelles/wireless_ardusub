@@ -32,7 +32,7 @@ using namespace std;
 
 struct Params {
   std::string serialPort, masterUri;
-  bool log2Console, useCommsService;
+  bool log2Console, useCommsService, log2File;
 };
 
 struct HROVPose {
@@ -238,14 +238,14 @@ void keepHeadingIteration(void) {
   double vel = getKeepHeadingDecrease(30);
   if (ahdiff > 1) {
     if (right) {
-      Log->Info("Turn left");
+      Log->Debug("Turn left");
       moveYaw(-vel);
     } else {
-      Log->Info("Turn right");
+      Log->Debug("Turn right");
       moveYaw(vel);
     }
   } else {
-    Log->Info("do not turn");
+    Log->Debug("do not turn");
     moveYaw(0);
   }
 }
@@ -395,6 +395,7 @@ void operatorMsgParserWork() {
     std::unique_lock<std::mutex> lock(currentOperatorMessage_mutex);
     while (!currentOperatorMessage_updated) {
       currentOperatorMessage_cond.wait_for(lock, chrono::milliseconds(2000));
+      Log->Warn("Heartbeat lost!");
       stopRobot();
     }
     currentOperatorMessage_updated = false;
@@ -601,6 +602,16 @@ int GetParams() {
 
   params.useCommsService = useCommsService;
 
+  bool log2File;
+  if (!nh.getParam("log2File", log2File)) {
+    ROS_ERROR("Failed to get param log2File");
+    return 1;
+  } else {
+    Log->Info("log2File: {}", log2File);
+  }
+
+  params.log2File = log2File;
+
   return 0;
 }
 int main(int argc, char **argv) {
@@ -613,7 +624,7 @@ int main(int argc, char **argv) {
   if (GetParams())
     return 1;
 
-  Log->SetLogLevel(cpplogging::LogLevel::debug);
+  Log->SetLogLevel(cpplogging::LogLevel::info);
   Log->FlushLogOn(cpplogging::LogLevel::info);
   Log->LogToConsole(params.log2Console);
 
@@ -623,8 +634,6 @@ int main(int argc, char **argv) {
   control->Start();
   control->LogToConsole(params.log2Console);
 
-  Log->SetLogLevel(LogLevel::debug);
-
   startWorkers();
   commsNode = dccomms::CreateObject<ROV>();
 
@@ -632,10 +641,17 @@ int main(int argc, char **argv) {
   commsNode->SetTxStateSize(HROVMessageV2::MessageLength);
   commsNode->SetMaxImageTrunkLength(100);
 
+  if (params.log2File) {
+    Log->LogToFile("rov_v3_main");
+    control->LogToFile("rov_v3_control");
+    commsNode->LogToFile("rov_v3_comms_node");
+  }
+
   if (!params.useCommsService) {
     Log->Info("CommsDevice type: dccomms_utils::S100Stream");
-    dccomms::Ptr<CommsDevice> stream = dccomms::CreateObject<dccomms_utils::S100Stream>(
-        params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
+    dccomms::Ptr<CommsDevice> stream =
+        dccomms::CreateObject<dccomms_utils::S100Stream>(
+            params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
     stream->Open();
     commsNode->SetComms(stream);
   }

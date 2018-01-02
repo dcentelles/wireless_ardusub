@@ -11,7 +11,7 @@
   <arg name="port" default="/dev/ttyUSB0"/>
   <arg name="launchHMI" default="true"/>
   <arg name="useCommsService" default="false"/>
-
+  <arg name="log2File" default="false"/>
   <include file="$(find image_utils_ros)/launch/decoder.launch">
      <arg name="log2Console" value="$(arg log2Console)"/>
      <arg name="namespace" value="$(arg namespace)"/>
@@ -25,6 +25,7 @@
 	<param name="port" value="$(arg port)" type="string"/>
 	<param name="log2Console" value="$(arg log2Console)" type="bool"/>
         <param name="useCommsService" value="$(arg useCommsService)" type="bool"/>
+	<param name="log2File" value="$(arg log2File)" type="bool"/>
      </node>
 
      
