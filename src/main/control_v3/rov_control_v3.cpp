@@ -394,9 +394,15 @@ void operatorMsgParserWork() {
   while (1) {
     std::unique_lock<std::mutex> lock(currentOperatorMessage_mutex);
     while (!currentOperatorMessage_updated) {
-      currentOperatorMessage_cond.wait_for(lock, chrono::milliseconds(2000));
-      Log->Warn("Heartbeat lost!");
-      stopRobot();
+      //if(currentOperatorMessage_cond.wait_for(lock, chrono::milliseconds(5000))==std::cv_status::timeout);
+      //if(!currentOperatorMessage_cond.wait_for(lock, chrono::milliseconds(5000), [currentOperatorMessage_updated]{return currentOperatorMessage_updated;}));
+      currentOperatorMessage_cond.wait_for(lock, chrono::milliseconds(2200));
+      if(!currentOperatorMessage_updated)
+      {
+        stopRobot();
+        control->Arm(false);
+        Log->Warn("Heartbeat lost. Stopping robot!");
+      }
     }
     currentOperatorMessage_updated = false;
 
