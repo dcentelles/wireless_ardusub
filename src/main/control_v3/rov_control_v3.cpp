@@ -12,7 +12,7 @@
 #include <dccomms_utils/S100Stream.h>
 #include <image_utils_ros_msgs/EncodedImg.h>
 #include <image_utils_ros_msgs/EncodingConfig.h>
-#include <mavlink_cpp/mavlink_cpp.h>
+#include <mavlink_cpp/GCSv1.h>
 #include <mavros_msgs/State.h>
 #include <mavros_msgs/VFR_HUD.h>
 #include <ros/ros.h>
@@ -32,7 +32,7 @@ using namespace std;
 
 struct Params {
   std::string serialPort, masterUri;
-  bool log2Console, useCommsService, log2File;
+  bool log2Console, log2File;
 };
 
 struct HROVPose {
@@ -43,8 +43,7 @@ static LoggerPtr Log;
 static Params params;
 
 static uint16_t localPort = 14550;
-static mavlink_cpp::Ptr<GCS> control =
-    mavlink_cpp::CreateObject<GCS>(localPort);
+static dccomms::Ptr<GCSv1> control = dccomms::CreateObject<GCSv1>(localPort);
 
 static dccomms::Ptr<OperatorMessageV2> currentOperatorMessage =
     dccomms::CreateObject<OperatorMessageV2>();
@@ -394,11 +393,13 @@ void operatorMsgParserWork() {
   while (1) {
     std::unique_lock<std::mutex> lock(currentOperatorMessage_mutex);
     while (!currentOperatorMessage_updated) {
-      //if(currentOperatorMessage_cond.wait_for(lock, chrono::milliseconds(5000))==std::cv_status::timeout);
-      //if(!currentOperatorMessage_cond.wait_for(lock, chrono::milliseconds(5000), [currentOperatorMessage_updated]{return currentOperatorMessage_updated;}));
+      // if(currentOperatorMessage_cond.wait_for(lock,
+      // chrono::milliseconds(5000))==std::cv_status::timeout);
+      // if(!currentOperatorMessage_cond.wait_for(lock,
+      // chrono::milliseconds(5000), [currentOperatorMessage_updated]{return
+      // currentOperatorMessage_updated;}));
       currentOperatorMessage_cond.wait_for(lock, chrono::milliseconds(2200));
-      if(!currentOperatorMessage_updated)
-      {
+      if (!currentOperatorMessage_updated) {
         stopRobot();
         control->Arm(false);
         Log->Warn("Heartbeat lost. Stopping robot!");
@@ -575,8 +576,7 @@ int GetParams() {
   ros::NodeHandle nh("~");
   std::string serialPort;
   if (!nh.getParam("port", serialPort)) {
-    ROS_ERROR("Failed to get param port");
-    return 1;
+    Log->Info("Using comms service with dccomms Id 'rov'");
   } else {
     Log->Info("port topic: {}", serialPort);
   }
@@ -597,16 +597,6 @@ int GetParams() {
   }
 
   params.log2Console = log2Console;
-
-  bool useCommsService;
-  if (!nh.getParam("useCommsService", useCommsService)) {
-    ROS_ERROR("Failed to get param useCommsService");
-    return 1;
-  } else {
-    Log->Info("useCommsService: {}", useCommsService);
-  }
-
-  params.useCommsService = useCommsService;
 
   bool log2File;
   if (!nh.getParam("log2File", log2File)) {
@@ -653,7 +643,7 @@ int main(int argc, char **argv) {
     commsNode->LogToFile("rov_v3_comms_node");
   }
 
-  if (!params.useCommsService) {
+  if (params.serialPort != "") {
     Log->Info("CommsDevice type: dccomms_utils::S100Stream");
     dccomms::Ptr<CommsDevice> stream =
         dccomms::CreateObject<dccomms_utils::S100Stream>(

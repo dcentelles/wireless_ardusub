@@ -7,6 +7,8 @@ set(CMAKE_COLOR_MAKEFILE   ON)
 SET(PROJECT_NAME_ORIG wireless_ardusub)
 message(STATUS "Building ${PROJECT_NAME_ORIG}...")
 
+SET(MODULES_DIR "modules" )
+
 #BEGIN RESOLVE GIT REVISION
 #https://bravenewmethod.com/2017/07/14/git-revision-as-compiler-definition-in-build-with-cmake/
 message(STATUS "Resolving GIT Version...")
@@ -72,12 +74,31 @@ generate_dynamic_reconfigure_options(
 
 ####### HANDLE DEPENDENCIES ######
 
-SET(${PROJECT_NAME}_DEPS_DIR "modules")
-SET(${PROJECT_NAME}_TMP0 ${CMAKE_CURRENT_SOURCE_DIR}/${${PROJECT_NAME}_DEPS_DIR})
-GETPROJECTS(${PROJECT_NAME}_DEPS ${${PROJECT_NAME}_TMP0})
-message(STATUS "Dependencies found in ${${PROJECT_NAME}_TMP0}: ${${PROJECT_NAME}_DEPS}")
-FOREACH(subdir ${${PROJECT_NAME}_DEPS})
-add_subdirectory(${${PROJECT_NAME}_DEPS_DIR}/${subdir})
+SET(DEPS_DIR ${MODULES_DIR})
+SET(TMP0 ${CMAKE_CURRENT_SOURCE_DIR}/${DEPS_DIR})
+GETPROJECTS(DEPS ${TMP0})
+message(STATUS "Dependencies found in ${TMP0}: ${DEPS}")
+FOREACH(subdir ${DEPS})
+if(GIT_FOUND)
+  SET(SUBPROJECT_PATH ${DEPS_DIR}/${subdir})
+  SET(SUBPROJECT_FULL_PATH ${CMAKE_CURRENT_SOURCE_DIR}/${SUBPROJECT_PATH})
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+    WORKING_DIRECTORY ${SUBPROJECT_FULL_PATH}
+    OUTPUT_VARIABLE _sub_build_version
+    ERROR_QUIET
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  SET(SUBPROJECT_GIT_NAME ${subdir}_${_sub_build_version})
+  message(STATUS "Subproject generated git name: " ${SUBPROJECT_GIT_NAME})
+  if (TARGET ${subdir})
+      message(WARNING "Subproject ${SUBPROJECT_GIT_NAME} (${subdir}) has already been built!")
+  else()
+      add_subdirectory(${SUBPROJECT_PATH})
+  endif()
+else()
+  message(STATUS "GIT not found")
+endif()
 ENDFOREACH()
 
 ######## END HANDLE DEPENDENCIES ######

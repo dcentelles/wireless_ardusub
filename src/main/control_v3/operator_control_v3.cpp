@@ -30,7 +30,7 @@ using namespace wireless_ardusub;
 
 struct Params {
   std::string serialPort, masterUri;
-  bool log2Console, useCommsService, log2File;
+  bool log2Console, log2File;
 };
 
 static Params params;
@@ -40,8 +40,7 @@ int GetParams() {
   ros::NodeHandle nh("~");
   std::string serialPort;
   if (!nh.getParam("port", serialPort)) {
-    ROS_ERROR("Failed to get param port");
-    return 1;
+    Log->Info("Using comms service with dccomms Id 'operator'");
   } else {
     Log->Info("port topic: {}", serialPort);
   }
@@ -62,16 +61,6 @@ int GetParams() {
   }
 
   params.log2Console = log2Console;
-
-  bool useCommsService;
-  if (!nh.getParam("useCommsService", useCommsService)) {
-    ROS_ERROR("Failed to get param useCommsService");
-    return 1;
-  } else {
-    Log->Info("useCommsService: {}", useCommsService);
-  }
-
-  params.useCommsService = useCommsService;
 
   bool log2File;
   if (!nh.getParam("log2File", log2File)) {
@@ -214,6 +203,7 @@ void OperatorController::StartWorkers() {
       _currentOperatorMessage_mutex.unlock();
       _currentOperatorMessage_updated = true;
       _currentOperatorMessage_cond.notify_one();
+      std::this_thread::sleep_for(chrono::milliseconds(20));
     }
   });
 }
@@ -263,7 +253,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
     _node->LogToFile("op_v3_comms_node");
   }
 
-  if (!params.useCommsService) {
+  if (params.serialPort != "") {
     auto s100Stream = CreateObject<dccomms_utils::S100Stream>(
         params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
     s100Stream->Open();

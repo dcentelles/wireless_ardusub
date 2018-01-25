@@ -9,7 +9,8 @@
 
 #include <chrono>
 #include <cpplogging/cpplogging.h>
-#include <mavlink_cpp/mavlink_cpp.h>
+#include <mavlink_cpp/GCS.h>
+#include <mavlink_cpp/utils.h>
 #include <telerobotics/StateReceiver.h>
 #include <wireless_ardusub/TeleopOrder.h>
 
