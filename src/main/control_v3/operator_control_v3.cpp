@@ -29,7 +29,7 @@ using namespace cpplogging;
 using namespace wireless_ardusub;
 
 struct Params {
-  std::string serialPort, masterUri;
+  std::string serialPort, masterUri, dccommsId;
   bool log2Console, log2File;
 };
 
@@ -38,11 +38,21 @@ static LoggerPtr Log;
 
 int GetParams() {
   ros::NodeHandle nh("~");
+  std::string dccommsId;
+  if (nh.getParam("port", dccommsId)) {
+    Log->Info("dccommsId: {}", dccommsId);
+    params.dccommsId = dccommsId;
+  } else
+    params.dccommsId = "operator";
+
   std::string serialPort;
   if (!nh.getParam("port", serialPort)) {
-    Log->Info("Using comms service with dccomms Id 'operator'");
+    Log->Info("Using comms service with dccomms Id '{}'", params.dccommsId);
   } else {
-    Log->Info("port topic: {}", serialPort);
+    if (serialPort == "service")
+      Log->Info("Using comms service with dccomms Id '{}'", params.dccommsId);
+    else
+      Log->Info("Serial port: {}", serialPort);
   }
   params.serialPort = serialPort;
 
@@ -54,23 +64,24 @@ int GetParams() {
 
   bool log2Console;
   if (!nh.getParam("log2Console", log2Console)) {
-    ROS_ERROR("Failed to get param log2Console");
-    return 1;
+    bool defaultValue = true;
+    Log->Info("log2Console set to default => {}", defaultValue);
+    params.log2Console = defaultValue;
   } else {
     Log->Info("log2Console: {}", log2Console);
+    params.log2Console = log2Console;
   }
-
-  params.log2Console = log2Console;
 
   bool log2File;
   if (!nh.getParam("log2File", log2File)) {
-    ROS_ERROR("Failed to get param log2File");
-    return 1;
+    bool defaultValue = false;
+    Log->Info("log2File set to default => {}", defaultValue);
+    params.log2File = defaultValue;
   } else {
     Log->Info("log2File: {}", log2File);
+    params.log2File = log2File;
   }
 
-  params.log2File = log2File;
   return 0;
 }
 
@@ -253,7 +264,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
     _node->LogToFile("op_v3_comms_node");
   }
 
-  if (params.serialPort != "") {
+  if (params.serialPort != "service") {
     auto s100Stream = CreateObject<dccomms_utils::S100Stream>(
         params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
     s100Stream->Open();
@@ -404,9 +415,8 @@ void OperatorController::JoyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
   }
 
   Info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
-            _teleopOrder->GetX(), _teleopOrder->GetY(), _teleopOrder->GetZ(),
-            _teleopOrder->GetR(), _teleopOrder->Arm() ? "true" : "false",
-            modeName);
+       _teleopOrder->GetX(), _teleopOrder->GetY(), _teleopOrder->GetZ(),
+       _teleopOrder->GetR(), _teleopOrder->Arm() ? "true" : "false", modeName);
   _teleopOrder_mutex.unlock();
 
   // remember current button states for future comparison

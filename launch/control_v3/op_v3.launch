@@ -6,7 +6,7 @@
     <param name="dev" value="/dev/input/js0" type="string"/>
   </node>
 
-  <arg name="namespace" default="/"/>
+  <arg name="namespace" default="/merbots/wrov/operator"/>
   <arg name="log2Console" default="false"/>
   <arg name="port" default="/dev/ttyUSB0"/>
   <arg name="launchHMI" default="true"/>

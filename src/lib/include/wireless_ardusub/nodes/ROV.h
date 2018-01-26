@@ -54,6 +54,7 @@ public:
   void SetTxStateSize(int);
 
   void HoldChannel(bool);
+  bool HoldingChannel() { return _holdChannel; }
 
 private:
   void _ReinitImageFlags();

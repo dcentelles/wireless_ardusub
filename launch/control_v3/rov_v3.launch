@@ -2,9 +2,9 @@
 
 <launch>
   <!-- start the teleop app -->
-  <arg name="namespace" default="/"/>
+  <arg name="namespace" default="/merbots/wrov/rov"/>
   <arg name="log2Console" default="true"/>
-  <arg name="port" default=""/>
+  <arg name="port" default="/dev/ttyUSB0"/>
   <arg name="log2File" default="false"/>
   <group ns="$(arg namespace)">
   	<node pkg="wireless_ardusub" type="rov_v3" name="rov_v3" output="screen" required="true">

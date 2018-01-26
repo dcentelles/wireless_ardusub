@@ -31,7 +31,7 @@ using namespace mavlink_cpp;
 using namespace std;
 
 struct Params {
-  std::string serialPort, masterUri;
+  std::string serialPort, masterUri, dccommsId;
   bool log2Console, log2File;
 };
 
@@ -393,16 +393,11 @@ void operatorMsgParserWork() {
   while (1) {
     std::unique_lock<std::mutex> lock(currentOperatorMessage_mutex);
     while (!currentOperatorMessage_updated) {
-      // if(currentOperatorMessage_cond.wait_for(lock,
-      // chrono::milliseconds(5000))==std::cv_status::timeout);
-      // if(!currentOperatorMessage_cond.wait_for(lock,
-      // chrono::milliseconds(5000), [currentOperatorMessage_updated]{return
-      // currentOperatorMessage_updated;}));
       currentOperatorMessage_cond.wait_for(lock, chrono::milliseconds(2200));
-      if (!currentOperatorMessage_updated) {
+      if (!currentOperatorMessage_updated && !commsNode->HoldingChannel()) {
         stopRobot();
         control->Arm(false);
-        Log->Warn("Heartbeat lost. Stopping robot!");
+        Log->Warn("Heartbeat lost. Stopping robot to avoid thruster interferences!");
       }
     }
     currentOperatorMessage_updated = false;
@@ -574,11 +569,21 @@ void initROSInterface(int argc, char **argv) {
 
 int GetParams() {
   ros::NodeHandle nh("~");
+  std::string dccommsId;
+  if (nh.getParam("port", dccommsId)) {
+    Log->Info("dccommsId: {}", dccommsId);
+    params.dccommsId = dccommsId;
+  } else
+    params.dccommsId = "rov";
+
   std::string serialPort;
   if (!nh.getParam("port", serialPort)) {
-    Log->Info("Using comms service with dccomms Id 'rov'");
+    Log->Info("Using comms service with dccomms Id '{}'", params.dccommsId);
   } else {
-    Log->Info("port topic: {}", serialPort);
+    if (serialPort == "service")
+      Log->Info("Using comms service with dccomms Id '{}'", params.dccommsId);
+    else
+      Log->Info("Serial port: {}", serialPort);
   }
   params.serialPort = serialPort;
 
@@ -590,23 +595,23 @@ int GetParams() {
 
   bool log2Console;
   if (!nh.getParam("log2Console", log2Console)) {
-    ROS_ERROR("Failed to get param log2Console");
-    return 1;
+    bool defaultValue = true;
+    Log->Info("log2Console set to default => {}", defaultValue);
+    params.log2Console = defaultValue;
   } else {
     Log->Info("log2Console: {}", log2Console);
+    params.log2Console = log2Console;
   }
-
-  params.log2Console = log2Console;
 
   bool log2File;
   if (!nh.getParam("log2File", log2File)) {
-    ROS_ERROR("Failed to get param log2File");
-    return 1;
+    bool defaultValue = false;
+    Log->Info("log2File set to default => {}", defaultValue);
+    params.log2File = defaultValue;
   } else {
     Log->Info("log2File: {}", log2File);
+    params.log2File = log2File;
   }
-
-  params.log2File = log2File;
 
   return 0;
 }
@@ -643,7 +648,7 @@ int main(int argc, char **argv) {
     commsNode->LogToFile("rov_v3_comms_node");
   }
 
-  if (params.serialPort != "") {
+  if (params.serialPort != "service") {
     Log->Info("CommsDevice type: dccomms_utils::S100Stream");
     dccomms::Ptr<CommsDevice> stream =
         dccomms::CreateObject<dccomms_utils::S100Stream>(
