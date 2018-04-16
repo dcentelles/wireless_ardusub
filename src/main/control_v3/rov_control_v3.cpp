@@ -570,7 +570,7 @@ void initROSInterface(int argc, char **argv) {
 int GetParams() {
   ros::NodeHandle nh("~");
   std::string dccommsId;
-  if (nh.getParam("port", dccommsId)) {
+  if (nh.getParam("dccommsId", dccommsId)) {
     Log->Info("dccommsId: {}", dccommsId);
     params.dccommsId = dccommsId;
   } else
