@@ -11,17 +11,18 @@
 #include <condition_variable>
 #include <cpplogging/Loggable.h>
 #include <dccomms/Utils.h>
+#include <dccomms_packets/SimplePacket.h>
 #include <functional>
 #include <iostream>
 #include <mutex>
 #include <wireless_ardusub/nodes/Constants.h>
-#include <wireless_ardusub/packets/SimplePacket.h>
 
 namespace wireless_ardusub {
 
 using namespace dccomms;
 using namespace cpplogging;
 using namespace teleop_v3;
+using namespace dccomms_packets;
 
 class ROV : public Loggable {
 public:

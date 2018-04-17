@@ -4,8 +4,38 @@ set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_COLOR_MAKEFILE   ON)
 
 
-SET(PROJECT_NAME_ORIG wireless_ardusub)
-message(STATUS "Building ${PROJECT_NAME_ORIG}...")
+project(wireless_ardusub CXX C)
+message(STATUS "Building ${PROJECT_NAME}...")
+
+## Find catkin macros and libraries
+## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
+## is used, also find other catkin packages
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  rospy
+  std_msgs
+  actionlib
+  actionlib_msgs
+  roslaunch
+  std_srvs
+  tf
+  message_generation
+  merbots_whrov_msgs
+  cv_bridge
+  image_transport
+  visp_ros
+  mavros_msgs
+  sensor_msgs
+  dynamic_reconfigure
+  image_utils_ros_msgs
+)
+
+#find_package(catkin REQUIRED dynamic_reconfigure)
+
+#http://wiki.ros.org/dynamic_reconfigure/Tutorials/HowToWriteYourFirstCfgFile
+generate_dynamic_reconfigure_options(
+  cfg/wireless_teleop_joy.cfg
+)
 
 SET(MODULES_DIR "modules" )
 
@@ -39,37 +69,6 @@ function(GETPROJECTS result curdir)
   ENDFOREACH()
   SET(${result} ${dirlist} PARENT_SCOPE)
 endfunction()
-
-project(${PROJECT_NAME_ORIG} CXX C)
-## Find catkin macros and libraries
-## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
-## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS
-  roscpp
-  rospy
-  std_msgs
-  actionlib
-  actionlib_msgs
-  roslaunch
-  std_srvs
-  tf
-  message_generation
-  merbots_whrov_msgs
-  cv_bridge
-  image_transport
-  visp_ros
-  mavros_msgs
-  sensor_msgs
-  dynamic_reconfigure
-  image_utils_ros_msgs
-)
-
-#find_package(catkin REQUIRED dynamic_reconfigure)
-
-#http://wiki.ros.org/dynamic_reconfigure/Tutorials/HowToWriteYourFirstCfgFile
-generate_dynamic_reconfigure_options(
-  cfg/wireless_teleop_joy.cfg
-)
 
 
 ####### HANDLE DEPENDENCIES ######
@@ -136,13 +135,12 @@ SET(${PROJECT_NAME}_CPP_FILES
                         ${SRCPATH}lib/src/HROVMessage.cpp
                         ${SRCPATH}lib/src/HROVMessageV2.cpp
                         ${SRCPATH}lib/src/TeleopOrder.cpp
-                        ${SRCPATH}lib/src/packets/SimplePacket.cpp
                         ${SRCPATH}lib/src/nodes/Operator.cpp
                         ${SRCPATH}lib/src/nodes/ROV.cpp
                         )
 
 add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
-target_link_libraries(${PROJECT_NAME} ${TELEROBOTICS_GIT})
+target_link_libraries(${PROJECT_NAME} ${DCCOMMS_UTILS_GIT} ${TELEROBOTICS_GIT})
 
 SET(ROV_V1 rov_v1)
 SET(OP_V1 op_v1)
@@ -202,4 +200,4 @@ catkin_package(
 
 roslaunch_add_file_check(launch)
 
-message(STATUS "End ${PROJECT_NAME_ORIG}")
+message(STATUS "End ${PROJECT_NAME}")
