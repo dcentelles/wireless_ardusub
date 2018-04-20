@@ -166,6 +166,9 @@ add_dependencies(${OP_V3} ${PROJECT_NAME}_gencfg)
 add_executable (${ROV_V3} ${SRCPATH}main/control_v3/rov_control_v3.cpp)
 target_link_libraries(${ROV_V3} ${TELEROBOTICS_GIT} ${DCCOMMS_UTILS_GIT} ${PROJECT_NAME} ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
 
+add_executable (NEDPublisher ${SRCPATH}main/debug_scripts/NEDPublisher.cpp)
+target_link_libraries(NEDPublisher ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
+
 install(TARGETS ${PROJECT_NAME} ${ROVA}
         LIBRARY DESTINATION "lib"
         RUNTIME DESTINATION "bin"
