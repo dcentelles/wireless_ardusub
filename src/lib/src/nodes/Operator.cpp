@@ -153,27 +153,6 @@ void Operator::Start() {
 
   currentImgPtr = beginImgPtr;
 
-  if (!_comms) {
-    Log->info("CommsDevice type: dccomms::CommsDeviceService");
-    auto rxPacketSize = GetRxPacketSize();
-    auto txPacketSize = GetTxPacketSize();
-    Log->info("Transmitted packet size: {} bytes.\n"
-              "Received packet size: {} bytes.",
-              txPacketSize, rxPacketSize);
-
-    std::string dccommsId = "operator";
-    Log->info("dccomms ID: {}", dccommsId);
-
-    dccomms::Ptr<IPacketBuilder> pb =
-        dccomms::CreateObject<SimplePacketBuilder>(rxPacketSize);
-
-    dccomms::Ptr<CommsDeviceService> commsService;
-    commsService = dccomms::CreateObject<CommsDeviceService>(pb);
-    commsService->SetCommsDeviceId(dccommsId);
-    commsService->SetLogLevel(LogLevel::info);
-    commsService->Start();
-    _comms = commsService;
-  }
   txservice.Start();
   rxservice.Start();
 }

@@ -1,18 +1,33 @@
 <?xml version="1.0"?>
-
 <launch>
   <!-- start the teleop app -->
   <arg name="namespace" default="/merbots/wrov/rov"/>
   <arg name="log2Console" default="true"/>
-  <arg name="port" default="/dev/ttyUSB0"/> <!--to use service set port to "service" -->
-  <arg name="dccommsId" default="rov"/> <!-- used when port == "service" -->
+  <arg name="port" default="/dev/ttyUSB0"/>
+  <!--to use service set port to "service" -->
+  <arg name="dccommsId" default="rov"/>
+  <!-- used when port == "service" -->
   <arg name="log2File" default="false"/>
+  <arg name="launchComms" default="true"/>
+  <arg name="launchImage" default="false"/>
+  <arg name="image" default="/usb_cam/image_raw"/>
+  <arg name="imageTransport" default="raw"/>
+  <arg name="encodedImage" default="encoded_image"/>
   <group ns="$(arg namespace)">
-  	<node pkg="wireless_ardusub" type="rov_v3" name="rov_v3" output="screen" required="true">
-		<param name="port" value="$(arg port)" type="string"/>
-		<param name="log2Console" value="$(arg log2Console)" type="bool"/>
-		<param name="log2File" value="$(arg log2File)" type="bool"/>
-		<param name="dccommsId" value="$(arg dccommsId)" type="string"/>
-	</node>
+    <node if="$(arg launchComms)" pkg="wireless_ardusub" type="rov_v3" name="rov_v3" output="screen" required="true">
+      <param name="port" value="$(arg port)" type="string"/>
+      <param name="log2Console" value="$(arg log2Console)" type="bool"/>
+      <param name="log2File" value="$(arg log2File)" type="bool"/>
+      <param name="dccommsId" value="$(arg dccommsId)" type="string"/>
+    </node>
+  </group>
+  <group if="$(arg launchImage)">
+    <include file="$(find image_utils_ros)/launch/encoder.launch">
+      <param name="image" value="$(arg image)" type="string"/>
+      <arg name="encodedImage" value="$(arg encodedImage)"/>
+      <arg name="imageTransport" value="$(arg imageTransport)"/>
+      <arg name="namespace" value="$(arg namespace)"/>
+    </include>
+    <include if="$(arg launchImage)" file="$(find usb_cam)/launch/usb_cam-test.launch"/>
   </group>
 </launch>

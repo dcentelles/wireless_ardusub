@@ -397,7 +397,8 @@ void operatorMsgParserWork() {
       if (!currentOperatorMessage_updated && !commsNode->HoldingChannel()) {
         stopRobot();
         control->Arm(false);
-        Log->Warn("Heartbeat lost. Stopping robot to avoid thruster interferences!");
+        Log->Warn(
+            "Heartbeat lost. Stopping robot to avoid thruster interferences!");
       }
     }
     currentOperatorMessage_updated = false;
@@ -632,8 +633,8 @@ int main(int argc, char **argv) {
   control->SetLogName("GCS");
   control->SetLogLevel(info);
   control->Arm(false);
-  control->Start();
   control->LogToConsole(params.log2Console);
+  control->Start();
 
   startWorkers();
   commsNode = dccomms::CreateObject<ROV>();
@@ -655,6 +656,26 @@ int main(int argc, char **argv) {
             params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
     stream->Open();
     commsNode->SetComms(stream);
+  } else {
+    Log->Info("CommsDevice type: dccomms::CommsDeviceService");
+    auto rxPacketSize = commsNode->GetRxPacketSize();
+    auto txPacketSize = commsNode->GetTxPacketSize();
+    Log->Info("Transmitted packet size: {} bytes.\n"
+              "Received packet size: {} bytes.",
+              txPacketSize, rxPacketSize);
+
+    std::string dccommsId = params.dccommsId;
+    Log->Info("dccomms ID: {}", dccommsId);
+
+    dccomms::Ptr<IPacketBuilder> pb =
+        dccomms::CreateObject<SimplePacketBuilder>(rxPacketSize);
+
+    dccomms::Ptr<CommsDeviceService> commsService;
+    commsService = dccomms::CreateObject<CommsDeviceService>(pb);
+    commsService->SetCommsDeviceId(dccommsId);
+    commsService->SetLogLevel(LogLevel::info);
+    commsService->Start();
+    commsNode->SetComms(commsService);
   }
 
   commsNode->LogToConsole(params.log2Console);

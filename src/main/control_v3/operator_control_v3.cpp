@@ -269,6 +269,26 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
         params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
     s100Stream->Open();
     _node->SetComms(s100Stream);
+  } else {
+    Info("CommsDevice type: dccomms::CommsDeviceService");
+    auto rxPacketSize = _node->GetRxPacketSize();
+    auto txPacketSize = _node->GetTxPacketSize();
+    Info("Transmitted packet size: {} bytes.\n"
+              "Received packet size: {} bytes.",
+              txPacketSize, rxPacketSize);
+
+    std::string dccommsId = params.dccommsId;
+    Info("dccomms ID: {}", dccommsId);
+
+    dccomms::Ptr<IPacketBuilder> pb =
+        dccomms::CreateObject<SimplePacketBuilder>(rxPacketSize);
+
+    dccomms::Ptr<CommsDeviceService> commsService;
+    commsService = dccomms::CreateObject<CommsDeviceService>(pb);
+    commsService->SetCommsDeviceId(dccommsId);
+    commsService->SetLogLevel(LogLevel::info);
+    commsService->Start();
+    _node->SetComms(commsService);
   }
 
   _node->SetImageReceivedCallback([this](Operator &op) {
