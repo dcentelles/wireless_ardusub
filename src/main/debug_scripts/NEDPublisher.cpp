@@ -24,7 +24,7 @@ int main(int argc, char **argv) {
   bluerov2Pub = nh.advertise<geometry_msgs::Pose>("/bluerov2/pose", 1);
 
   control->SetLogName("GCS");
-  control->SetLogLevel(off);
+  control->SetLogLevel(debug);
   control->FlushLogOn(debug);
 
   control->EnableGPSMock(true);

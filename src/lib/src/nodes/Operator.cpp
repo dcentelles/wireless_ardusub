@@ -167,7 +167,7 @@ void Operator::_TxWork() {
   }
   if (_canTransmit) {
     _SendPacketWithDesiredState();
-    std::this_thread::sleep_for(chrono::milliseconds(1000));
+    std::this_thread::sleep_for(chrono::milliseconds(800));
   } else
     std::this_thread::sleep_for(chrono::milliseconds(50));
 }
