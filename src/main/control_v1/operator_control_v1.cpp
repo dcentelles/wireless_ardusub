@@ -15,9 +15,7 @@
 
 // ROS and image_transport
 #include "ros/ros.h"
-#include <cv_bridge/cv_bridge.h>
-#include <image_transport/image_transport.h>
-#include <opencv2/highgui/highgui.hpp>
+#include <image_utils_ros_msgs/EncodedImg.h>
 
 #include <merbots_whrov_msgs/MoveOrderAction.h>
 #include <merbots_whrov_msgs/hrov_settings.h>
@@ -37,28 +35,20 @@
 // Logging
 #include <cpplogging/Logger.h>
 
-extern "C" {
-#include <image_utils/image_utils.h>
-#include <image_utils/libdebt.h>
-}
-
 using namespace std;
 using namespace dcauv;
 
 static LoggerPtr Log = cpplogging::CreateLogger("OperatorMain");
-static struct debtEncParam e;
-static struct debtDecParam d;
-static uint8_t *imgBuffer;
+uint8_t imgBuffer[20000];
 static unsigned int g_iwidth;
 static unsigned int g_iheight;
 struct imgBuffer *img;
-static cv::Mat myuv, mrgb;
+static image_utils_ros_msgs::EncodedImg encodedImgMsg;
+static ros::Publisher encodedImage_pub;
 
 // static image_transport::CameraPublisher camera_pub;
-static image_transport::Publisher camera_pub;
 static ros::Publisher currentHROVState_pub;
 static ros::Subscriber desiredHROVState_sub;
-static sensor_msgs::ImagePtr camera_msg;
 
 static uint8_t *y, *u, *v;
 static wireless_ardusub::OperatorMessagePtr currentOperatorMessage;
@@ -372,160 +362,6 @@ struct ProtocolConfig {
   }
 };
 
-static void usage(char *pgmname, struct debtEncParam *e, struct debtDecParam *d,
-                  ProtocolConfig &pconfig) {
-  Log->Info("usage: {} [options]\n"
-            "Options:\n"
-            "\t-v [0|1]         - Use vector instructions if possible <{}>\n"
-            "\n"
-            "Decoding settings: -d\n"
-            "\t-b [bias]        - Bias used when decoding (default, zero, mid, "
-            "exp, midexp) <{}>\n"
-            "\t-a [bias weight] - Bias weight to use with bias <{}>\n"
-            "\n"
-            "Protocol settings:\n"
-            "\t-L		    - Max. packet length <{}>\n"
-            "\t-T (fulld|halfd)			- Protocol type <{}>\n",
-
-            pgmname, e->vector, bias_name(d->bias), d->weight,
-            pconfig.maxPacketLength, pconfig.ltype);
-  exit(-1);
-}
-
-/* -d to decode or -e to encode */
-/* returns -1 to graph, 0 to decode, 1 to encode */
-static int getOptions(int argc, char *argv[], struct debtEncParam *e,
-                      struct debtDecParam *d, ProtocolConfig &pconfig) {
-  int opt;
-  int error = 0;
-  int xi = 0;
-  int dec = 0;
-  int enc = 0;
-  int graph = 0;
-
-  while ((opt = getopt(argc, argv,
-                       "v:db:a:c:et:n:k:r:q:u:x:p:m:s:l:i:y:gf:h:I:L:T:")) !=
-         -1) {
-    switch (opt) {
-    case 'T':
-      pconfig.ltype = std::string(optarg);
-      if (pconfig.ltype != "fulld" && pconfig.ltype != "halfd")
-        error += 1;
-      break;
-    case 'L':
-      pconfig.maxPacketLength = atoi(optarg);
-      break;
-    case 'v':
-      error += optGetIntError(optarg, &e->vector, 0);
-      break;
-    case 'h':
-      error += optGetIntError(optarg, &e->benchmark, 0);
-      break;
-    case 'f':
-      error += optGetIntError(optarg, &e->timestats, 0);
-      break;
-    case 'g':
-      /* special hidden option to calculate rate x psnr curve */
-      graph = 1;
-      break;
-    case 'd':
-      ++dec;
-      break;
-    case 'b':
-      if (!optarg) {
-        d->bias = BIAS_DEF;
-      } else {
-        int b = bias_code(optarg);
-        if (b != -1)
-          d->bias = b;
-        else
-          ++error;
-      }
-      break;
-    case 'a':
-      error += optGetFloatError(optarg, &d->weight, 0.0);
-      break;
-    case 'c':
-      if (optGetIntError(optarg, &xi, 0))
-        ++error;
-      else
-        d->bitlen = xi << 3;
-      break;
-    case 'e':
-      ++enc;
-      break;
-    case 't':
-      if (!optarg) {
-        e->transform = TRANSFORM_I_B_13x7T;
-      } else {
-        int t = transform_code(optarg);
-        if (t != -1)
-          e->transform = t;
-        else
-          ++error;
-      }
-      break;
-    case 'n':
-      error += optGetIntError(optarg, &e->nbands, 0);
-      break;
-    case 'k':
-      error += optGetIntError(optarg, &e->maxk, 0);
-      break;
-    case 'r':
-      error += optGetFloatError(optarg, &e->refmul, 0.0);
-      break;
-    case 'q':
-      error += optGetFloatError(optarg, &e->quality, 0.0);
-      break;
-    case 'u':
-      error += optGetIntError(optarg, &e->resolution, 0);
-      break;
-    case 'x':
-      error += optGetIntError(optarg, &e->maxsize, 0);
-      break;
-    case 'p':
-      error += optGetIntError(optarg, &e->pad, 0);
-      break;
-    case 'm':
-      error += optGetIntError(optarg, &e->map, 0);
-      break;
-    case 's':
-      error += optGetIntError(optarg, &e->esc, 0);
-      break;
-    case 'l':
-      error += optGetIntError(optarg, &e->uroi_shift, 0);
-      break;
-    case 'i':
-      error += optGetRect(e, optarg);
-      break;
-    case 'y':
-      error += optGetIntError(optarg, &e->dynamic, 0);
-      break;
-    default: /* '?' */
-      usage(argv[0], e, d, pconfig);
-    }
-  }
-
-  if (error) {
-    usage(pgmName(argv[0]), e, d, pconfig);
-  }
-  if (optind < argc) {
-    Log->Error("Unexpected argument(s) after options\n");
-    usage(pgmName(argv[0]), e, d, pconfig);
-  }
-  if (dec && (enc || graph)) {
-    Log->Error("Decode and Encode flags cannot be used simultaneously\n");
-    usage(pgmName(argv[0]), e, d, pconfig);
-  }
-  return graph ? -1 : !dec;
-}
-
-static void defaultParams(struct debtEncParam *e, struct debtDecParam *d) {
-  debtEncParam_init(e);
-  e->vector = 1;
-  debtDecParam_init(d);
-}
-
 void HandleNewDesiredSettings(
     const merbots_whrov_msgs::hrov_settings::ConstPtr &msg) {
   auto desiredSettings = wireless_ardusub::HROVSettings::BuildHROVSettings(msg);
@@ -548,40 +384,11 @@ void HandleCurrentState(ROVOperator &rovOperator) {
 }
 
 void HandleNewImage(ROVOperator &rovOperator) {
-  Log->Info("New image received! Decoding...");
-
-  int fsize = rovOperator.GetLastReceivedImage(imgBuffer);
-  d.bitlen = fsize << 3;
-  decode(&d, imgBuffer, img);
-
-  int ysize = img->width * img->height;
-  int uvsize = img->uvwidth * img->uvheight;
-  int yuvsize = ysize + (uvsize << 1);
-
-  Log->Debug("yb: {}", (unsigned long)y);
-  Log->Debug("Width: {}, Height: {}", img->width, img->height);
-  Log->Debug("y size: {}, U and V size: {}", ysize, uvsize);
-  Log->Debug("yuvsize: {}", yuvsize);
-
-  if (img->width != g_iwidth || img->height != g_iheight) {
-    g_iwidth = img->width;
-    g_iheight = img->height;
-
-    y = img->buffer;
-    u = y + ysize;
-    v = u + uvsize;
-
-    /// USING OpenCV ///
-    myuv.create(g_iheight + g_iheight / 2, g_iwidth,
-                CV_8UC1); // We allocate the buffer for a yuv420 size
-    mrgb.create(g_iheight, g_iwidth, CV_8UC3);
-    myuv.data = y; // imgBuffer will share the same buffer as myuv
-  }
-  /// USING OpenCV ///
-  cv::cvtColor(myuv, mrgb, CV_YUV2BGR_I420);
-  camera_msg =
-      cv_bridge::CvImage(std_msgs::Header(), "bgr8", mrgb).toImageMsg();
-  camera_pub.publish(camera_msg);
+  int encodedImgSize;
+  encodedImgSize = rovOperator.GetLastReceivedImage(imgBuffer);
+  encodedImgMsg.img.resize(encodedImgSize);
+  memcpy(encodedImgMsg.img.data(), imgBuffer, encodedImgSize);
+  encodedImage_pub.publish(encodedImgMsg);
 }
 
 void initMessages(void) {
@@ -595,17 +402,15 @@ void initMessages(void) {
 
 void initROSInterface(ros::NodeHandle &nh, int argc, char **argv,
                       ROVOperator &rovOperator) {
-  image_transport::ImageTransport it(nh);
-
   initMessages();
-
   orderActionServer = new MoveOrderActionServer("actions/move_order", nh);
   orderActionServer->Start();
   desiredHROVState_sub = nh.subscribe<merbots_whrov_msgs::hrov_settings>(
       "desired_hrov_settings", 1, HandleNewDesiredSettings); //,
   // boost::bind(HandleNewDesiredSettings, _1, &rovOperator));
 
-  camera_pub = it.advertise("camera", 1);
+  encodedImage_pub =
+      nh.advertise<image_utils_ros_msgs::EncodedImg>("encoded_image", 1);
 
   currentHROVState_pub =
       nh.advertise<merbots_whrov_msgs::position>("current_hrov_position", 1);
@@ -675,19 +480,6 @@ int main(int argc, char **argv) {
     ROS_INFO("linkType: %s", slinkType.c_str());
   }
 
-  defaultParams(&e, &d);
-
-  ProtocolConfig pconfig;
-  // int act = getOptions(argc, argv, &e, &d, pconfig);
-
-  img = imgBuffer_new();
-
-  struct sigaction sa;
-  memset(&sa, 0, sizeof(sa));
-  sigemptyset(&sa.sa_mask);
-  sa.sa_sigaction = segfault_sigaction;
-  sa.sa_flags = SA_SIGINFO;
-
   ROVOperator rovOperator(linkType);
 
   rovOperator.SetLogLevel(cpplogging::LogLevel::debug);
@@ -705,13 +497,6 @@ int main(int argc, char **argv) {
 
   Log->Info("remote addr: {}", remoteAddr);
 
-  sigaction(SIGSEGV, &sa, NULL);
-  imgBuffer = new uint8_t[1280 * 720 * 3 * 2 + 30]; // Unos 30 bytes mas para el
-                                                    // header (que no sabemos,
-                                                    // de momento, cuanto ocupa,
-                                                    // y que depende de la
-                                                    // resolucion de cada imagen
-                                                    // recibida
   try {
     rovOperator.SetRxStateSize(wireless_ardusub::HROVMessage::MessageLength);
     rovOperator.SetTxStateSize(
@@ -729,10 +514,6 @@ int main(int argc, char **argv) {
     Log->Error("Radio Exception: {}", e.what());
     exit(1);
   }
-
-  debtDecParam_destroy(&d);
-  debtEncParam_destroy(&e);
-  imgBuffer_del(img);
 
   return 0;
 }

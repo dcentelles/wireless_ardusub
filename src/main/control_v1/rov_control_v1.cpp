@@ -3,15 +3,11 @@
 // ROS
 #include <ros/ros.h>
 #include <tf/transform_listener.h> //for position relative to ROV frame
+#include <image_utils_ros_msgs/EncodedImg.h>
+#include <image_utils_ros_msgs/EncodingConfig.h>
 // end ROS
 
 #include <telerobotics/ROVCamera.h>
-
-extern "C" {
-// image compression
-#include <image_utils/image_utils.h>
-#include <image_utils/libdebt.h>
-}
 
 // Sync
 #include <condition_variable>
@@ -33,27 +29,10 @@ extern "C" {
 // Logging
 #include <cpplogging/Logger.h>
 
-// visp_ros-grabbing
-#include <visp_ros/vpROSGrabber.h>
-
-// ViSP formats and conversion
-#include <visp/vpImageConvert.h>
-#include <visp/vpRGBa.h>
-#include <visp3/core/vpImage.h>
-// end ViSP
-
-// OpenCV
-#include <opencv2/imgproc/imgproc.hpp>
-// end OpenCV
-
 using namespace std;
 using namespace dcauv;
 
 static LoggerPtr Log = cpplogging::CreateLogger("BlueROVControl");
-
-static cv::Mat cvImage;
-static cv::Mat cvImageResized;
-static cv::Mat cvImageYuv;
 
 struct Params {
   std::string cameraTopic, masterUri;
@@ -86,11 +65,7 @@ struct ProtocolConfig {
 
 static Params params;
 
-static struct debtEncParam *eparam;
-static struct debtDecParam dparam;
-
 static ProtocolConfig pconfig;
-static std::mutex config_mutex;
 
 static std::thread controlWorker;
 
@@ -136,40 +111,30 @@ static boost::array<int, 8> rcIn = {rcDefVal, rcDefVal, rcDefVal, rcDefVal,
                                     rcDefVal, rcDefVal, rcDefVal, rcDefVal};
 static bool keepHeading = false;
 static uint16_t desiredHeading = 0;
+static image_utils_ros_msgs::EncodingConfig emsg;
+static int lastImageSize = -1;
+static ros::Subscriber encodedImage_sub;
+static ros::Publisher encodingConfig_pub;
 
 void UpdateSettings(wireless_ardusub::HROVSettingsPtr settings,
                     ROVCamera *rovCamera) {
   merbots_whrov_msgs::hrov_settings::Ptr msg = settings->GetROSMsg();
-  char roiparam[100];
 
-  config_mutex.lock();
-  debtEncParam_destroy(eparam);
-  delete eparam;
-  eparam = new debtEncParam();
-  debtEncParam_init(eparam);
-  eparam->vector = 1;
-  eparam->nbands = 4;
-  if (msg->image_config.roi_shift > 0) {
-    sprintf(roiparam, "%d,%d,%d,%d",
-            msg->image_config.roi_x0 &
-                ~((1 << eparam->nbands) -
-                  1), // nbands = 5 --> 0x1f ; nbands = 6 --> 0x3f ; etc
-            msg->image_config.roi_y0 & ~((1 << eparam->nbands) - 1),
-            msg->image_config.roi_x1 & ~((1 << eparam->nbands) - 1),
-            msg->image_config.roi_y1 & ~((1 << eparam->nbands) - 1));
-    optGetRect(eparam, roiparam);
-    eparam->uroi_shift = msg->image_config.roi_shift;
-    Log->Debug("ROI conf.: {} -- shift: {}", roiparam, eparam->uroi_shift);
-  } else {
-    eparam->uroi_shift = 0;
-  }
+  Log->Info("Current image settings:\n"
+            "\t(x0,y0): ({},{})\n"
+            "\t(x1,y1): ({},{})\n)"
+            "\tsize: {} bytes"
+            "\tROI shift: {}",
+            settings->GetROIX0(), settings->GetROIY0(),
+            settings->GetROIX1(), settings->GetROIY1(),
+            settings->GetImgSize(), settings->GetROIShift());
 
-  int imgLength =
-      (msg->image_config.size > 64 && msg->image_config.size <= 6000)
-          ? msg->image_config.size
-          : 64;
-  pconfig.frameSize = imgLength;
-  config_mutex.unlock();
+  emsg.max_size = settings->GetImgSize();
+  emsg.shift = settings->GetROIShift();
+  emsg.x0 = settings->GetROIX0();
+  emsg.y0 = settings->GetROIY0();
+  emsg.x1 = settings->GetROIX1();
+  emsg.y1 = settings->GetROIY1();
 
   int requiredImageTrunkLength =
       (int)msg->protocol_config.max_packet_length -
@@ -179,6 +144,7 @@ void UpdateSettings(wireless_ardusub::HROVSettingsPtr settings,
           ? msg->protocol_config.max_packet_length
           : 60;
   rovCamera->SetMaxImageTrunkLength(maxImageTrunkLength);
+  encodingConfig_pub.publish(emsg);
 }
 
 void CancelCurrentMoveOrder() {
@@ -527,6 +493,15 @@ void HandleNewNavigationData(const sensor_msgs::Imu::ConstPtr &msg,
   currentHROVPose_cond.notify_one();
 }
 
+void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg, ROVCamera * rovCamera) {
+  if (!rovCamera->SendingCurrentImage()) {
+    lastImageSize =
+        emsg.max_size <= msg->img.size() ? emsg.max_size : msg->img.size();
+    Log->Info("Sending the new captured image... ({} bytes)", lastImageSize);
+    rovCamera->SendImage((void *)msg->img.data(), lastImageSize);
+  }
+}
+
 void initROSInterface(ros::NodeHandle &nh, int argc, char **argv,
                       ROVCamera &rovCamera) {
   initMessages();
@@ -534,6 +509,12 @@ void initROSInterface(ros::NodeHandle &nh, int argc, char **argv,
   startMessageSenderWorker(&rovCamera);
   startOperatorMsgParserWorker(&rovCamera);
   startControlWorker();
+
+  encodedImage_sub = nh.subscribe<image_utils_ros_msgs::EncodedImg>(
+      "encoded_image", 1, boost::bind(handleNewImage, _1, &rovCamera));
+  encodingConfig_pub =
+      nh.advertise<image_utils_ros_msgs::EncodingConfig>("encoding_config", 1);
+
 
   ardusubNav_sub = nh.subscribe<sensor_msgs::Imu>(
       "/mavros/imu/data", 1,
@@ -557,16 +538,7 @@ void initROSInterface(ros::NodeHandle &nh, int argc, char **argv,
   startHeadingWorker();
 }
 
-static void defaultParams(struct debtEncParam *e, struct debtDecParam *d) {
-  debtEncParam_init(e);
-  e->vector = 1;
-  debtDecParam_init(d);
-}
-
 int GetParams(ros::NodeHandle &nh) {
-  eparam = new debtEncParam();
-  defaultParams(eparam, &dparam);
-
   std::string cameraTopic;
   if (!nh.getParam("image", cameraTopic)) {
     ROS_ERROR("Failed to get param image");
@@ -642,39 +614,6 @@ int main(int argc, char **argv) {
   if (GetParams(nh))
     return 1;
 
-  //////////// GRABBER AND ENCODER SETUP
-  vpImage<vpRGBa> Image;
-  vpROSGrabber grabber;
-  grabber.setMasterURI(params.masterUri);
-  grabber.setImageTopic(params.cameraTopic);
-  grabber.open(Image);
-
-  struct sigaction sa;
-  memset(&sa, 0, sizeof(sa));
-  sigemptyset(&sa.sa_mask);
-  sa.sa_sigaction = segfault_sigaction;
-  sa.sa_flags = SA_SIGINFO;
-
-  sigaction(SIGSEGV, &sa, NULL);
-
-  struct imgBuffer *img = NULL;
-  /* prepare an image buffer for the input image */
-  if ((img = imgBuffer_aligned_new(1))) {
-    if (!imgBuffer_reinit(img, pconfig.width, pconfig.height,
-                          COLORFORMAT_FMT_420))
-      return 1;
-  } else
-    return 1;
-
-  /* setup the output buffer */
-  unsigned char *buffer = NULL;
-  int buflen = 0;
-  int fixed = 0;
-  if (eparam->maxsize) {
-    buffer = (unsigned char *)malloc(buflen = eparam->maxsize);
-    fixed = 1;
-  }
-
   ROVCamera rovCamera(params.linkType);
   rovCamera.SetLocalAddr(params.localAddr);
   rovCamera.SetRemoteAddr(params.remoteAddr);
@@ -686,12 +625,6 @@ int main(int argc, char **argv) {
 
   Log->SetLogLevel(cpplogging::LogLevel::debug);
   Log->FlushLogOn(cpplogging::LogLevel::info);
-
-  cvImageResized.create(pconfig.height, pconfig.width, CV_8UC3);
-  // http://stackoverflow.com/questions/14897525/create-yuv-mat-in-opencv-on-android
-  cvImageYuv.create(pconfig.height + pconfig.height / 2, pconfig.width,
-                    CV_8UC1);    // We allocate the buffer for a yuv420 size
-  cvImageYuv.data = img->buffer; // imgBuffer will share the same buf
 
   try {
     rovCamera.SetTxStateSize(wireless_ardusub::HROVMessage::MessageLength);
@@ -705,31 +638,6 @@ int main(int argc, char **argv) {
 
     rovCamera.Start();
     while (ros::ok()) {
-      if (!rovCamera.SendingCurrentImage()) {
-        /////////CAPTURE
-        grabber.acquire(Image);
-
-        /////////TRANSFORM
-        // ViSP has not a method to convert RGB to YUV420, so we convert first
-        // to an OpenCV type
-        vpImageConvert::convert(Image, cvImage);
-        cv::resize(cvImage, cvImageResized,
-                   cv::Size(pconfig.width, pconfig.height));
-        cv::cvtColor(cvImageResized, cvImageYuv, CV_RGB2YUV_I420);
-
-        config_mutex.lock(); // At the moment, only the compression parameters
-                             // will be dynamic
-
-        /////////COMPRESS
-        int res = encode(eparam, &buffer, buflen, fixed, img);
-
-        /////////PREPARE TO SEND
-        if (res) {
-          Log->Info("Sending the new captured image...");
-          rovCamera.SendImage(buffer, pconfig.frameSize);
-        }
-        config_mutex.unlock();
-      }
       ros::spinOnce();
       rate.sleep();
     }

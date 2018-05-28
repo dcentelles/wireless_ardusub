@@ -21,9 +21,6 @@ find_package(catkin REQUIRED COMPONENTS
   tf
   message_generation
   merbots_whrov_msgs
-  cv_bridge
-  image_transport
-  visp_ros
   mavros_msgs
   sensor_msgs
   dynamic_reconfigure
@@ -114,9 +111,7 @@ SET(${PROJECT_NAME}_INCLUDE_DIRS
     ${SRCPATH}lib/include
     modules
     ${${TELEROBOTICS_GIT}_INCLUDE_DIRS}
-    ${${DCCOMMS_UTILS_GIT}_INCLUDE_DIRS}
     ${${MAVLINK_CPP_GIT}_INCLUDE_DIRS}
-    ${${IMAGE-UTILS_GIT}_INCLUDE_DIRS}
     )
 
 
@@ -140,7 +135,7 @@ SET(${PROJECT_NAME}_CPP_FILES
                         )
 
 add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
-target_link_libraries(${PROJECT_NAME} ${DCCOMMS_UTILS_GIT} ${TELEROBOTICS_GIT})
+target_link_libraries(${PROJECT_NAME} ${TELEROBOTICS_GIT})
 
 SET(ROV_V1 rov_v1)
 SET(OP_V1 op_v1)
@@ -150,9 +145,9 @@ SET(ROV_V3 rov_v3)
 SET(OP_V3 op_v3)
 
 add_executable (${ROV_V1} ${SRCPATH}main/control_v1/rov_control_v1.cpp)
-target_link_libraries(${ROV_V1} ${IMAGE-UTILS_GIT} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
+target_link_libraries(${ROV_V1} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
 add_executable (${OP_V1} ${SRCPATH}main/control_v1/operator_control_v1.cpp)
-target_link_libraries(${OP_V1} ${IMAGE-UTILS_GIT}  ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
+target_link_libraries(${OP_V1} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
 
 add_executable (${OP_V2} ${SRCPATH}main/control_v2/operator_control_v2.cpp)
 target_link_libraries(${OP_V2} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
@@ -161,10 +156,10 @@ add_executable (${ROV_V2} ${SRCPATH}main/control_v2/rov_control_v2.cpp)
 target_link_libraries(${ROV_V2} ${TELEROBOTICS_GIT} ${PROJECT_NAME} ${MAVLINK_CPP_GIT})
 
 add_executable (${OP_V3} ${SRCPATH}main/control_v3/operator_control_v3.cpp)
-target_link_libraries(${OP_V3} ${TELEROBOTICS_GIT} ${DCCOMMS_UTILS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
+target_link_libraries(${OP_V3} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
 add_dependencies(${OP_V3} ${PROJECT_NAME}_gencfg)
 add_executable (${ROV_V3} ${SRCPATH}main/control_v3/rov_control_v3.cpp)
-target_link_libraries(${ROV_V3} ${TELEROBOTICS_GIT} ${DCCOMMS_UTILS_GIT} ${PROJECT_NAME} ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
+target_link_libraries(${ROV_V3} ${TELEROBOTICS_GIT} ${PROJECT_NAME} ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
 
 add_executable (NEDPublisher ${SRCPATH}main/debug_scripts/NEDPublisher.cpp)
 target_link_libraries(NEDPublisher ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
@@ -180,9 +175,7 @@ catkin_package(
    LIBRARIES
     ${PROJECT_NAME}
     ${${TELEROBOTICS_GIT}_LIBRARIES}
-    ${${DCCOMMS_UTILS_GIT}_LIBRARIES}
     ${${MAVLINK_CPP_GIT}_LIBRARIES}
-    ${${IMAGE-UTILS_GIT}_LIBRARIES}
    INCLUDE_DIRS
     ${${PROJECT_NAME}_INCLUDE_DIRS}
    CATKIN_DEPENDS
@@ -191,10 +184,7 @@ catkin_package(
     std_msgs
     actionlib_msgs
     message_runtime
-    cv_bridge
-    image_transport
     merbots_whrov_msgs
-    visp_ros
     mavros_msgs
     image_utils_ros_msgs
     sensor_msgs
