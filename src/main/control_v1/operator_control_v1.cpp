@@ -28,15 +28,15 @@
 // end ROS
 
 // Merbots
-#include <wireless_ardusub/HROVMessage.h>
-#include <wireless_ardusub/OperatorMessage.h>
+#include <telerobotics/HROVMessage.h>
+#include <telerobotics/OperatorMessage.h>
 // EndMerbots
 
 // Logging
 #include <cpplogging/Logger.h>
 
 using namespace std;
-using namespace dcauv;
+using namespace telerobotics;
 
 static LoggerPtr Log = cpplogging::CreateLogger("OperatorMain");
 uint8_t imgBuffer[20000];
@@ -51,8 +51,8 @@ static ros::Publisher currentHROVState_pub;
 static ros::Subscriber desiredHROVState_sub;
 
 static uint8_t *y, *u, *v;
-static wireless_ardusub::OperatorMessagePtr currentOperatorMessage;
-static wireless_ardusub::HROVMessagePtr currentHROVMessage;
+static telerobotics::OperatorMessagePtr currentOperatorMessage;
+static telerobotics::HROVMessagePtr currentHROVMessage;
 static std::mutex currentOperatorMessage_mutex;
 static std::mutex currentHROVMessage_mutex;
 static std::condition_variable currentOperatorMessage_cond;
@@ -113,14 +113,14 @@ public:
     currentOperatorMessage->CancelLastOrderFlag(true);
     currentOperatorMessage->SetOrderSeqNumber(requestedOID);
     currentOperatorMessage->SetOrderType(
-        wireless_ardusub::OperatorMessage::NoOrder);
+        telerobotics::OperatorMessage::NoOrder);
     currentOperatorMessage_updated = true;
     currentOperatorMessage_mutex.unlock();
     currentOperatorMessage_cond.notify_one();
   }
 
   void actionWorker(const merbots_whrov_msgs::MoveOrderGoalConstPtr &goal) {
-    auto moveOrder = wireless_ardusub::HROVMoveOrder::BuildHROVMoveOrder();
+    auto moveOrder = telerobotics::HROVMoveOrder::BuildHROVMoveOrder();
 
     moveOrder->SetYaw(goal->order.yaw);
     moveOrder->SetZ(goal->order.Z);
@@ -159,7 +159,7 @@ public:
     currentOperatorMessage_mutex.lock();
     currentOperatorMessage->SetOrderSeqNumber(oid);
     currentOperatorMessage->SetOrderType(
-        wireless_ardusub::OperatorMessage::Move);
+        telerobotics::OperatorMessage::Move);
     currentOperatorMessage->SetMoveOrder(moveOrder);
     currentOperatorMessage->CancelLastOrderFlag(false);
     currentOperatorMessage_updated = true;
@@ -170,7 +170,7 @@ public:
     moveOrderFeedback.message = "Waiting for the order acknowledgment...";
     actionServer.publishFeedback(moveOrderFeedback);
 
-    int nextOID = wireless_ardusub::HROVMessage::GetNextOrderSeqNumber(oid);
+    int nextOID = telerobotics::HROVMessage::GetNextOrderSeqNumber(oid);
     lock.lock();
     while (requestedOID != nextOID) {
       hrovState_updated_cond.wait_for(lock, std::chrono::seconds(1));
@@ -225,7 +225,7 @@ public:
     }
     currentOperatorMessage_mutex.lock();
     currentOperatorMessage->SetOrderType(
-        wireless_ardusub::OperatorMessage::NoOrder);
+        telerobotics::OperatorMessage::NoOrder);
     currentOperatorMessage_updated = true;
     currentOperatorMessage_mutex.unlock();
     currentOperatorMessage_cond.notify_one();
@@ -362,9 +362,22 @@ struct ProtocolConfig {
   }
 };
 
+telerobotics::HROVSettingsPtr
+BuildHROVSettings(const merbots_whrov_msgs::hrov_settings::ConstPtr &msg) {
+  auto settings = telerobotics::HROVSettings::BuildHROVSettings();
+  settings->SetROIConf(msg->image_config.roi_x0, msg->image_config.roi_y0,
+                       msg->image_config.roi_x1, msg->image_config.roi_y1,
+                       msg->image_config.roi_shift);
+
+  settings->SetImgSize(msg->image_config.size);
+  settings->SetImgResolution(msg->image_config.resolution);
+  settings->SetMaxPacketLength(msg->protocol_config.max_packet_length);
+  return settings;
+}
+
 void HandleNewDesiredSettings(
     const merbots_whrov_msgs::hrov_settings::ConstPtr &msg) {
-  auto desiredSettings = wireless_ardusub::HROVSettings::BuildHROVSettings(msg);
+  auto desiredSettings = BuildHROVSettings(msg);
 
   currentOperatorMessage_mutex.lock();
   currentOperatorMessage->SetSettings(desiredSettings);
@@ -392,9 +405,9 @@ void HandleNewImage(ROVOperator &rovOperator) {
 }
 
 void initMessages(void) {
-  currentHROVMessage = wireless_ardusub::HROVMessage::BuildHROVMessage();
+  currentHROVMessage = telerobotics::HROVMessage::BuildHROVMessage();
   currentOperatorMessage =
-      wireless_ardusub::OperatorMessage::BuildOperatorMessage();
+      telerobotics::OperatorMessage::BuildOperatorMessage();
 
   currentOperatorMessage_updated = false;
   currentHROVMessage_updated = false;
@@ -498,9 +511,9 @@ int main(int argc, char **argv) {
   Log->Info("remote addr: {}", remoteAddr);
 
   try {
-    rovOperator.SetRxStateSize(wireless_ardusub::HROVMessage::MessageLength);
+    rovOperator.SetRxStateSize(telerobotics::HROVMessage::MessageLength);
     rovOperator.SetTxStateSize(
-        wireless_ardusub::OperatorMessage::MessageLength);
+        telerobotics::OperatorMessage::MessageLength);
     rovOperator.SetImageReceivedCallback(&HandleNewImage);
     rovOperator.SetStateReceivedCallback(&HandleCurrentState);
 

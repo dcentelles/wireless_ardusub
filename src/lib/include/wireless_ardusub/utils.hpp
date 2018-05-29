@@ -2,7 +2,7 @@
 #define INCLUDE_WIRELESS_ARDUSUB_UTILS_HPP
 #include <math.h>
 
-namespace wireless_ardusub {
+namespace telerobotics {
 namespace utils {
 
 static constexpr double range_yaw = M_PI * 2;

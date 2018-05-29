@@ -1,10 +1,10 @@
 #include <iostream>
 
 // ROS
-#include <ros/ros.h>
-#include <tf/transform_listener.h> //for position relative to ROV frame
 #include <image_utils_ros_msgs/EncodedImg.h>
 #include <image_utils_ros_msgs/EncodingConfig.h>
+#include <ros/ros.h>
+#include <tf/transform_listener.h> //for position relative to ROV frame
 // end ROS
 
 #include <telerobotics/ROVCamera.h>
@@ -17,8 +17,8 @@
 #include <merbots_whrov_msgs/hrov_settings.h>
 #include <merbots_whrov_msgs/movement.h>
 #include <merbots_whrov_msgs/position.h>
-#include <wireless_ardusub/HROVMessage.h>
-#include <wireless_ardusub/OperatorMessage.h>
+#include <telerobotics/HROVMessage.h>
+#include <telerobotics/OperatorMessage.h>
 #include <wireless_ardusub/utils.hpp>
 // EndMerbots
 
@@ -30,13 +30,13 @@
 #include <cpplogging/Logger.h>
 
 using namespace std;
-using namespace dcauv;
+using namespace telerobotics;
 
 static LoggerPtr Log = cpplogging::CreateLogger("BlueROVControl");
 
 struct Params {
   std::string cameraTopic, masterUri;
-  dcauv::LinkType linkType;
+  telerobotics::LinkType linkType;
   int localAddr, remoteAddr;
   bool log2Console;
 };
@@ -69,17 +69,17 @@ static ProtocolConfig pconfig;
 
 static std::thread controlWorker;
 
-static wireless_ardusub::HROVMessagePtr currentHROVMessage;
+static telerobotics::HROVMessagePtr currentHROVMessage;
 static bool currentHROVMessage_updated;
 static std::mutex currentHROVMessage_mutex;
 static std::condition_variable currentHROVMessage_cond;
 
-static wireless_ardusub::OperatorMessagePtr currentOperatorMessage;
+static telerobotics::OperatorMessagePtr currentOperatorMessage;
 static bool currentOperatorMessage_updated;
 static std::mutex currentOperatorMessage_mutex;
 static std::condition_variable currentOperatorMessage_cond;
 
-static wireless_ardusub::HROVMoveOrderPtr newMoveOrder;
+static telerobotics::HROVMoveOrderPtr newMoveOrder;
 static bool newMoveOrderAvailable;
 static std::mutex newMoveOrder_mutex;
 static std::condition_variable newMoveOrder_cond;
@@ -116,18 +116,34 @@ static int lastImageSize = -1;
 static ros::Subscriber encodedImage_sub;
 static ros::Publisher encodingConfig_pub;
 
-void UpdateSettings(wireless_ardusub::HROVSettingsPtr settings,
+merbots_whrov_msgs::hrov_settings::Ptr
+BuildSettingsMsg(telerobotics::HROVSettingsPtr settings) {
+  merbots_whrov_msgs::hrov_settings::Ptr cstate(
+      new merbots_whrov_msgs::hrov_settings());
+  cstate.reset(new merbots_whrov_msgs::hrov_settings());
+  cstate->image_config.size = settings->GetImgSize();
+  cstate->image_config.roi_x0 = settings->GetROIX0();
+  cstate->image_config.roi_y0 = settings->GetROIY0();
+  cstate->image_config.roi_x1 = settings->GetROIX1();
+  cstate->image_config.roi_y1 = settings->GetROIY1();
+  cstate->image_config.roi_shift = settings->GetROIShift();
+  cstate->image_config.resolution = settings->GetImgResolution();
+  cstate->protocol_config.max_packet_length = settings->GetMaxPacketLength();
+  return cstate;
+}
+
+void UpdateSettings(telerobotics::HROVSettingsPtr settings,
                     ROVCamera *rovCamera) {
-  merbots_whrov_msgs::hrov_settings::Ptr msg = settings->GetROSMsg();
+  merbots_whrov_msgs::hrov_settings::Ptr msg = BuildSettingsMsg(settings);
 
   Log->Info("Current image settings:\n"
             "\t(x0,y0): ({},{})\n"
             "\t(x1,y1): ({},{})\n)"
             "\tsize: {} bytes"
             "\tROI shift: {}",
-            settings->GetROIX0(), settings->GetROIY0(),
-            settings->GetROIX1(), settings->GetROIY1(),
-            settings->GetImgSize(), settings->GetROIShift());
+            settings->GetROIX0(), settings->GetROIY0(), settings->GetROIX1(),
+            settings->GetROIY1(), settings->GetImgSize(),
+            settings->GetROIShift());
 
   emsg.max_size = settings->GetImgSize();
   emsg.shift = settings->GetROIShift();
@@ -138,7 +154,7 @@ void UpdateSettings(wireless_ardusub::HROVSettingsPtr settings,
 
   int requiredImageTrunkLength =
       (int)msg->protocol_config.max_packet_length -
-      (int)wireless_ardusub::HROVMessage::MessageLength;
+      (int)telerobotics::HROVMessage::MessageLength;
   int maxImageTrunkLength =
       (requiredImageTrunkLength > 60 && requiredImageTrunkLength <= 6000)
           ? msg->protocol_config.max_packet_length
@@ -169,7 +185,7 @@ void operatorMsgParserWork(ROVCamera *rovCamera) {
     auto settings = currentOperatorMessage->GetSettingsCopy();
     UpdateSettings(settings, rovCamera);
 
-    wireless_ardusub::HROVMoveOrderPtr _moveOrder;
+    telerobotics::HROVMoveOrderPtr _moveOrder;
     currentHROVMessage_mutex.lock();
     if (currentHROVMessage->GetExpectedOrderSeqNumber() ==
         currentOperatorMessage->GetOrderSeqNumber()) {
@@ -181,10 +197,10 @@ void operatorMsgParserWork(ROVCamera *rovCamera) {
       } else {
         switch (currentOperatorMessage->GetOrderType()) {
 
-        case wireless_ardusub::OperatorMessage::NoOrder:
+        case telerobotics::OperatorMessage::NoOrder:
           Log->Info("Message received from operator does not contain an order");
           break;
-        case wireless_ardusub::OperatorMessage::Move:
+        case telerobotics::OperatorMessage::Move:
           CancelCurrentMoveOrder();
           Log->Info("Received order of movement");
           if (!currentHROVMessage->Ready())
@@ -339,7 +355,7 @@ void controlWorker_work(void) {
     int millis = 1000;
     if (newMoveOrder->Relative()) {
       switch (newMoveOrder->GetFrame()) {
-      case wireless_ardusub::HROVMoveOrder::Frame::ROV_FRAME: {
+      case telerobotics::HROVMoveOrder::Frame::ROV_FRAME: {
         if (requestZ != 0)
           rcIn[2] = rcDefVal + (int)(requestZ * inc);
 
@@ -358,7 +374,7 @@ void controlWorker_work(void) {
 
         break;
       }
-      case wireless_ardusub::HROVMoveOrder::Frame::WORLD_FRAME:
+      case telerobotics::HROVMoveOrder::Frame::WORLD_FRAME:
 
         break;
 
@@ -431,9 +447,9 @@ void terminateMessageSenderWorker(void) {
 }
 
 void initMessages(void) {
-  currentHROVMessage = wireless_ardusub::HROVMessage::BuildHROVMessage();
+  currentHROVMessage = telerobotics::HROVMessage::BuildHROVMessage();
   currentOperatorMessage =
-      wireless_ardusub::OperatorMessage::BuildOperatorMessage();
+      telerobotics::OperatorMessage::BuildOperatorMessage();
 
   currentHROVMessage->Ready(true);
   currentOperatorMessage_updated = false;
@@ -470,9 +486,9 @@ void HandleNewNavigationData(const sensor_msgs::Imu::ConstPtr &msg,
   rotMat.getEulerYPR(yaw, pitch, roll);
 
   int rx, ry, rz;
-  rx = wireless_ardusub::utils::GetDiscreteYaw(roll);
-  ry = wireless_ardusub::utils::GetDiscreteYaw(pitch);
-  rz = wireless_ardusub::utils::GetDiscreteYaw(yaw);
+  rx = telerobotics::utils::GetDiscreteYaw(roll);
+  ry = telerobotics::utils::GetDiscreteYaw(pitch);
+  rz = telerobotics::utils::GetDiscreteYaw(yaw);
 
   rx = rx > 180 ? -(360 - rx) : rx;
   ry = ry > 180 ? -(360 - ry) : ry;
@@ -493,7 +509,8 @@ void HandleNewNavigationData(const sensor_msgs::Imu::ConstPtr &msg,
   currentHROVPose_cond.notify_one();
 }
 
-void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg, ROVCamera * rovCamera) {
+void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg,
+                    ROVCamera *rovCamera) {
   if (!rovCamera->SendingCurrentImage()) {
     lastImageSize =
         emsg.max_size <= msg->img.size() ? emsg.max_size : msg->img.size();
@@ -514,7 +531,6 @@ void initROSInterface(ros::NodeHandle &nh, int argc, char **argv,
       "encoded_image", 1, boost::bind(handleNewImage, _1, &rovCamera));
   encodingConfig_pub =
       nh.advertise<image_utils_ros_msgs::EncodingConfig>("encoding_config", 1);
-
 
   ardusubNav_sub = nh.subscribe<sensor_msgs::Imu>(
       "/mavros/imu/data", 1,
@@ -627,10 +643,10 @@ int main(int argc, char **argv) {
   Log->FlushLogOn(cpplogging::LogLevel::info);
 
   try {
-    rovCamera.SetTxStateSize(wireless_ardusub::HROVMessage::MessageLength);
-    rovCamera.SetRxStateSize(wireless_ardusub::OperatorMessage::MessageLength);
+    rovCamera.SetTxStateSize(telerobotics::HROVMessage::MessageLength);
+    rovCamera.SetRxStateSize(telerobotics::OperatorMessage::MessageLength);
     rovCamera.SetMaxImageTrunkLength(
-        pconfig.maxPacketLength - wireless_ardusub::HROVMessage::MessageLength);
+        pconfig.maxPacketLength - telerobotics::HROVMessage::MessageLength);
     rovCamera.SetOrdersReceivedCallback(&HandleOperatorMessageReceived);
 
     ros::Rate rate(30); // 30 hz

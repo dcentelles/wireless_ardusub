@@ -14,12 +14,12 @@
 #include <sensor_msgs/Joy.h>
 #include <telerobotics/StateSender.h>
 #include <vector>
-#include <wireless_ardusub/TeleopOrder.h>
+#include <telerobotics/TeleopOrder.h>
 #include <wireless_ardusub/wireless_teleop_joyConfig.h>
 
 using namespace cpplogging;
-using namespace dcauv;
-using namespace wireless_ardusub;
+using namespace telerobotics;
+using namespace telerobotics;
 
 class Teleop : public Logger {
 public:

@@ -12,12 +12,12 @@
 #include <mavlink_cpp/GCS.h>
 #include <mavlink_cpp/utils.h>
 #include <telerobotics/StateReceiver.h>
-#include <wireless_ardusub/TeleopOrder.h>
+#include <telerobotics/TeleopOrder.h>
 
 using namespace cpplogging;
-using namespace dcauv;
+using namespace telerobotics;
 using namespace std::chrono_literals;
-using namespace wireless_ardusub;
+using namespace telerobotics;
 using namespace mavlink_cpp;
 
 static LoggerPtr Log;

@@ -19,14 +19,14 @@
 #include <sensor_msgs/Joy.h>
 #include <vector>
 #include <wireless_ardusub/Constants.h>
-#include <wireless_ardusub/HROVMessageV2.h>
-#include <wireless_ardusub/OperatorMessageV2.h>
-#include <wireless_ardusub/nodes/Constants.h>
-#include <wireless_ardusub/nodes/Operator.h>
+#include <telerobotics/HROVMessageV2.h>
+#include <telerobotics/OperatorMessageV2.h>
+#include <telerobotics/Operator.h>
 #include <wireless_ardusub/wireless_teleop_joyConfig.h>
 
 using namespace cpplogging;
-using namespace wireless_ardusub;
+using namespace telerobotics;
+using namespace telerobotics;
 
 struct Params {
   std::string serialPort, masterUri, dccommsId;
@@ -144,7 +144,7 @@ private:
   bool _initRT;
   std::vector<int> _previous_buttons;
   image_utils_ros_msgs::EncodedImg _encodedImgMsg;
-  uint8_t _imgBuffer[wireless_ardusub::teleop_v3::MAX_IMG_SIZE];
+  uint8_t _imgBuffer[telerobotics::MAX_IMG_SIZE];
 
   std::thread _hrovMsgParserWorker, _msgSenderWorker, _teleopOrderWorker;
 
@@ -241,7 +241,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
   SetLogName("TeleopJoy");
   Log->info("Sender initialized");
 
-  _encodedImgMsg.img.reserve(wireless_ardusub::teleop_v3::MAX_IMG_SIZE);
+  _encodedImgMsg.img.reserve(telerobotics::MAX_IMG_SIZE);
 
   _currentHROVState_pub =
       _nh.advertise<merbots_whrov_msgs::state>("current_hrov_state", 1);
@@ -538,7 +538,7 @@ void OperatorController::ActionWorker(
   _orderFeedback.message = "Waiting for the order acknowledgment...";
   _orderActionServer.publishFeedback(_orderFeedback);
 
-  int nextOID = wireless_ardusub::HROVMessageV2::GetNextOrderSeqNumber(_oid);
+  int nextOID = telerobotics::HROVMessageV2::GetNextOrderSeqNumber(_oid);
   hrovStateLock.lock();
 
   while (_requestedOID != nextOID) {

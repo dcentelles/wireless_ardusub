@@ -121,21 +121,12 @@ add_definitions(-fPIC -std=c++14)
 include_directories(
   ${${PROJECT_NAME}_INCLUDE_DIRS}
 )
-SET(${PROJECT_NAME}_CPP_FILES
-                        ${SRCPATH}lib/src/HROVSettings.cpp
-                        ${SRCPATH}lib/src/HROVSettingsV2.cpp
-                        ${SRCPATH}lib/src/HROVMoveOrder.cpp
-                        ${SRCPATH}lib/src/OperatorMessage.cpp
-                        ${SRCPATH}lib/src/OperatorMessageV2.cpp
-                        ${SRCPATH}lib/src/HROVMessage.cpp
-                        ${SRCPATH}lib/src/HROVMessageV2.cpp
-                        ${SRCPATH}lib/src/TeleopOrder.cpp
-                        ${SRCPATH}lib/src/nodes/Operator.cpp
-                        ${SRCPATH}lib/src/nodes/ROV.cpp
-                        )
+#SET(${PROJECT_NAME}_CPP_FILES
 
-add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
-target_link_libraries(${PROJECT_NAME} ${TELEROBOTICS_GIT})
+#                        )
+
+#add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
+#target_link_libraries(${PROJECT_NAME} ${TELEROBOTICS_GIT})
 
 SET(ROV_V1 rov_v1)
 SET(OP_V1 op_v1)
@@ -145,26 +136,26 @@ SET(ROV_V3 rov_v3)
 SET(OP_V3 op_v3)
 
 add_executable (${ROV_V1} ${SRCPATH}main/control_v1/rov_control_v1.cpp)
-target_link_libraries(${ROV_V1} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
+target_link_libraries(${ROV_V1} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES})
 add_executable (${OP_V1} ${SRCPATH}main/control_v1/operator_control_v1.cpp)
-target_link_libraries(${OP_V1} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
+target_link_libraries(${OP_V1} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES})
 
 add_executable (${OP_V2} ${SRCPATH}main/control_v2/operator_control_v2.cpp)
-target_link_libraries(${OP_V2} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
+target_link_libraries(${OP_V2} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES})
 add_dependencies(${OP_V2} ${PROJECT_NAME}_gencfg)
 add_executable (${ROV_V2} ${SRCPATH}main/control_v2/rov_control_v2.cpp)
-target_link_libraries(${ROV_V2} ${TELEROBOTICS_GIT} ${PROJECT_NAME} ${MAVLINK_CPP_GIT})
+target_link_libraries(${ROV_V2} ${TELEROBOTICS_GIT} ${MAVLINK_CPP_GIT})
 
 add_executable (${OP_V3} ${SRCPATH}main/control_v3/operator_control_v3.cpp)
-target_link_libraries(${OP_V3} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
+target_link_libraries(${OP_V3} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES})
 add_dependencies(${OP_V3} ${PROJECT_NAME}_gencfg)
 add_executable (${ROV_V3} ${SRCPATH}main/control_v3/rov_control_v3.cpp)
-target_link_libraries(${ROV_V3} ${TELEROBOTICS_GIT} ${PROJECT_NAME} ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
+target_link_libraries(${ROV_V3} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
 
 add_executable (NEDPublisher ${SRCPATH}main/debug_scripts/NEDPublisher.cpp)
 target_link_libraries(NEDPublisher ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
 
-install(TARGETS ${PROJECT_NAME} ${ROVA}
+install(TARGETS ${ROVA}
         LIBRARY DESTINATION "lib"
         RUNTIME DESTINATION "bin"
         )

@@ -19,16 +19,17 @@
 #include <sensor_msgs/Imu.h>
 #include <tf/transform_listener.h>
 #include <wireless_ardusub/Constants.h>
-#include <wireless_ardusub/HROVMessageV2.h>
-#include <wireless_ardusub/OperatorMessageV2.h>
-#include <wireless_ardusub/nodes/ROV.h>
+#include <telerobotics/HROVMessageV2.h>
+#include <telerobotics/OperatorMessageV2.h>
+#include <telerobotics/ROV.h>
 #include <wireless_ardusub/utils.hpp>
 
 using namespace cpplogging;
 using namespace std::chrono_literals;
-using namespace wireless_ardusub;
+using namespace telerobotics;
 using namespace mavlink_cpp;
 using namespace std;
+using namespace telerobotics;
 
 struct Params {
   std::string serialPort, masterUri, dccommsId;
@@ -508,9 +509,9 @@ void HandleNewNavigationData(const sensor_msgs::Imu::ConstPtr &msg) {
   rotMat.getEulerYPR(yaw, pitch, roll);
 
   int rx, ry, rz;
-  rx = wireless_ardusub::utils::GetDiscreteYaw(roll);
-  ry = wireless_ardusub::utils::GetDiscreteYaw(pitch);
-  rz = wireless_ardusub::utils::GetDiscreteYaw(yaw);
+  rx = telerobotics::utils::GetDiscreteYaw(roll);
+  ry = telerobotics::utils::GetDiscreteYaw(pitch);
+  rz = telerobotics::utils::GetDiscreteYaw(yaw);
 
   rx = rx > 180 ? -(360 - rx) : rx;
   ry = ry > 180 ? -(360 - ry) : ry;
