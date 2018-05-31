@@ -92,7 +92,7 @@ public:
   MoveOrderActionServer(std::string name, ros::NodeHandle nh)
       : actionServer(
             nh, name,
-            boost::bind(&MoveOrderActionServer::actionWorker, this, _1), false),
+            boost::bind(&MoveOrderActionServer::ActionWorker, this, _1), false),
         actionName(name), oid(0), requestedOID(0), hrovReady(false),
         transmittingOrder(false) {}
   ~MoveOrderActionServer(void) {}
@@ -119,7 +119,7 @@ public:
     currentOperatorMessage_cond.notify_one();
   }
 
-  void actionWorker(const merbots_whrov_msgs::MoveOrderGoalConstPtr &goal) {
+  void ActionWorker(const merbots_whrov_msgs::MoveOrderGoalConstPtr &goal) {
     auto moveOrder = telerobotics::HROVMoveOrder::BuildHROVMoveOrder();
 
     moveOrder->SetYaw(goal->order.yaw);
@@ -363,7 +363,7 @@ struct ProtocolConfig {
 };
 
 telerobotics::HROVSettingsPtr
-BuildHROVSettings(const merbots_whrov_msgs::hrov_settings::ConstPtr &msg) {
+buildHROVSettings(const merbots_whrov_msgs::hrov_settings::ConstPtr &msg) {
   auto settings = telerobotics::HROVSettings::BuildHROVSettings();
   settings->SetROIConf(msg->image_config.roi_x0, msg->image_config.roi_y0,
                        msg->image_config.roi_x1, msg->image_config.roi_y1,
@@ -375,9 +375,9 @@ BuildHROVSettings(const merbots_whrov_msgs::hrov_settings::ConstPtr &msg) {
   return settings;
 }
 
-void HandleNewDesiredSettings(
+void handleNewDesiredSettings(
     const merbots_whrov_msgs::hrov_settings::ConstPtr &msg) {
-  auto desiredSettings = BuildHROVSettings(msg);
+  auto desiredSettings = buildHROVSettings(msg);
 
   currentOperatorMessage_mutex.lock();
   currentOperatorMessage->SetSettings(desiredSettings);
@@ -387,7 +387,7 @@ void HandleNewDesiredSettings(
   currentOperatorMessage_cond.notify_one();
 }
 
-void HandleCurrentState(ROVOperator &rovOperator) {
+void handleCurrentState(ROVOperator &rovOperator) {
   currentHROVMessage_mutex.lock();
   rovOperator.GetLastConfirmedState(currentHROVMessage->GetBuffer());
   currentHROVMessage_mutex.unlock();
@@ -396,7 +396,7 @@ void HandleCurrentState(ROVOperator &rovOperator) {
   currentHROVMessage_cond.notify_one();
 }
 
-void HandleNewImage(ROVOperator &rovOperator) {
+void handleNewImage(ROVOperator &rovOperator) {
   int encodedImgSize;
   encodedImgSize = rovOperator.GetLastReceivedImage(imgBuffer);
   encodedImgMsg.img.resize(encodedImgSize);
@@ -419,7 +419,7 @@ void initROSInterface(ros::NodeHandle &nh, int argc, char **argv,
   orderActionServer = new MoveOrderActionServer("actions/move_order", nh);
   orderActionServer->Start();
   desiredHROVState_sub = nh.subscribe<merbots_whrov_msgs::hrov_settings>(
-      "desired_hrov_settings", 1, HandleNewDesiredSettings); //,
+      "desired_hrov_settings", 1, handleNewDesiredSettings); //,
   // boost::bind(HandleNewDesiredSettings, _1, &rovOperator));
 
   encodedImage_pub =
@@ -514,8 +514,8 @@ int main(int argc, char **argv) {
     rovOperator.SetRxStateSize(telerobotics::HROVMessage::MessageLength);
     rovOperator.SetTxStateSize(
         telerobotics::OperatorMessage::MessageLength);
-    rovOperator.SetImageReceivedCallback(&HandleNewImage);
-    rovOperator.SetStateReceivedCallback(&HandleCurrentState);
+    rovOperator.SetImageReceivedCallback(&handleNewImage);
+    rovOperator.SetStateReceivedCallback(&handleCurrentState);
 
     initROSInterface(nh, argc, argv, rovOperator);
 

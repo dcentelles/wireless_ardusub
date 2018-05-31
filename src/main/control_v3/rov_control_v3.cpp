@@ -13,15 +13,13 @@
 #include <image_utils_ros_msgs/EncodedImg.h>
 #include <image_utils_ros_msgs/EncodingConfig.h>
 #include <mavlink_cpp/GCSv1.h>
-#include <mavros_msgs/State.h>
-#include <mavros_msgs/VFR_HUD.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Imu.h>
-#include <tf/transform_listener.h>
-#include <wireless_ardusub/Constants.h>
 #include <telerobotics/HROVMessageV2.h>
 #include <telerobotics/OperatorMessageV2.h>
 #include <telerobotics/ROV.h>
+#include <tf/transform_listener.h>
+#include <wireless_ardusub/Constants.h>
 #include <wireless_ardusub/utils.hpp>
 
 using namespace cpplogging;
@@ -68,8 +66,6 @@ static std::thread messageSenderWorker;
 static std::thread keepOrientationWorker;
 static std::thread holdChannelWorker;
 
-static ros::Subscriber ardusubState_sub;
-
 static ros::Subscriber encodedImage_sub;
 static ros::Publisher encodingConfig_pub;
 static dccomms::Ptr<ROV> commsNode;
@@ -87,14 +83,11 @@ static bool holdChannelReceived;
 static std::mutex holdChannel_mutex;
 static std::condition_variable holdChannel_cond;
 
-static bool cancelLastOrder;
+static bool cancelLastOrderFlag;
 
 static bool executingOrder;
 static std::mutex executingOrder_mutex;
 static std::condition_variable executingOrder_cond;
-
-static ros::Subscriber ardusubNav_sub;
-static ros::Subscriber ardusubHUD_sub;
 
 static HROVPose currentHROVPose;
 static std::mutex currentHROVPose_mutex;
@@ -166,21 +159,21 @@ void mockOrderWork() {
 
   // work step 0
   this_thread::sleep_for(chrono::milliseconds(2000));
-  if (cancelLastOrder) {
+  if (cancelLastOrderFlag) {
     notifyLastOrderCancellationAndRobotReady();
     return;
   }
 
   // work step 1
   this_thread::sleep_for(chrono::milliseconds(2000));
-  if (cancelLastOrder) {
+  if (cancelLastOrderFlag) {
     notifyLastOrderCancellationAndRobotReady();
     return;
   }
 
   // work step 2
   this_thread::sleep_for(chrono::milliseconds(2000));
-  if (cancelLastOrder) {
+  if (cancelLastOrderFlag) {
     notifyLastOrderCancellationAndRobotReady();
     return;
   }
@@ -315,13 +308,13 @@ void updateImageSettings(const HROVSettingsV2Ptr &lastSettings) {
   notifyROVReady();
 }
 
-void CancelLastOrder() {
+void cancelLastOrder() {
   std::unique_lock<std::mutex> lock(executingOrder_mutex);
   while (executingOrder) {
-    cancelLastOrder = true;
+    cancelLastOrderFlag = true;
     executingOrder_cond.wait(lock);
   }
-  cancelLastOrder = false;
+  cancelLastOrderFlag = false;
   lock.unlock();
 }
 
@@ -332,16 +325,16 @@ void handleNewOrder() {
 
   auto orderType = currentOperatorMessage->GetOrderType();
   auto cSeq = currentOperatorMessage->GetOrderSeqNumber();
-  auto cancelLastOrder = currentOperatorMessage->CancelLastOrderFlag();
+  auto _cancelLastOrder = currentOperatorMessage->CancelLastOrder();
 
   if (eSeq == cSeq) {
-    if (cancelLastOrder) {
+    if (_cancelLastOrder) {
       Log->Debug("Cancelation requested");
-      CancelLastOrder();
+      cancelLastOrder();
       Log->Debug("Cancelled");
     } else if (orderType != OperatorMessageV2::OrderType::NoOrder) {
       Log->Debug("New order requested. Cancel current order (if any)");
-      CancelLastOrder();
+      cancelLastOrder();
       Log->Debug("Cancelled");
       switch (orderType) {
       case OperatorMessageV2::OrderType::HoldChannel: {
@@ -482,32 +475,29 @@ void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
   }
 }
 
-void HandleNewHUDData(const mavros_msgs::VFR_HUD::ConstPtr &msg) {
+void handleNewHUDData(const mavlink_vfr_hud_t &msg) {
   currentHROVMessage_mutex.lock();
-  currentHROVMessageV2->SetHeading(msg->heading);
+  currentHROVMessageV2->SetHeading(msg.heading);
+  currentHROVMessageV2->SetZ(msg.alt);
   currentHROVMessage_updated = true;
   currentHROVMessage_mutex.unlock();
   currentHROVMessage_cond.notify_one();
 
   currentHROVPose_mutex.lock();
-  currentHROVPose.heading = msg->heading;
+  currentHROVPose.heading = msg.heading;
+  currentHROVPose.Z = msg.alt;
   currentHROVPose_updated = true;
   currentHROVPose_mutex.unlock();
   currentHROVPose_cond.notify_one();
 }
 
-void HandleNewNavigationData(const sensor_msgs::Imu::ConstPtr &msg) {
-  // the following is not correct! x, y z is the components of a Quaternion, not
-  // the Euler angles.
-
-  tf::Quaternion rotation(msg->orientation.x, msg->orientation.y,
-                          msg->orientation.z, msg->orientation.w);
-
-  tf::Matrix3x3 rotMat(rotation);
-
+void handleNewNavigationData(const mavlink_attitude_t &attitude) {
   tfScalar yaw, pitch, roll;
-  rotMat.getEulerYPR(yaw, pitch, roll);
+  yaw = attitude.yaw;
+  pitch = attitude.pitch;
+  roll = attitude.roll;
 
+  Log->Info("yaw: {} ; pitch: {} ; roll: {}", yaw, pitch, roll);
   int rx, ry, rz;
   rx = telerobotics::utils::GetDiscreteYaw(roll);
   ry = telerobotics::utils::GetDiscreteYaw(pitch);
@@ -532,18 +522,24 @@ void HandleNewNavigationData(const sensor_msgs::Imu::ConstPtr &msg) {
   currentHROVPose_cond.notify_one();
 }
 
-void HandleNewArdusubState(const mavros_msgs::State::ConstPtr &msg) {
+void handleNewArdusubState(const mavlink_heartbeat_t &msg) {
   ARDUSUB_NAV_MODE mode;
-  if (msg->mode == "MANUAL") {
+  switch (msg.custom_mode) {
+  case FLY_MODE_R::MANUAL:
     mode = ARDUSUB_NAV_MODE::NAV_MANUAL;
-  } else if (msg->mode == "STABILIZE") {
+    break;
+  case FLY_MODE_R::STABILIZE:
     mode = ARDUSUB_NAV_MODE::NAV_STABILIZE;
-  } else if (msg->mode == "ALT_HOLD") {
+    break;
+  case FLY_MODE_R::DEPTH_HOLD:
     mode = ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD;
-  } else
+    break;
+  default:
     mode = ARDUSUB_NAV_MODE::NAV_UNKNOWN;
+    break;
+  }
+  bool armed = msg.base_mode & MAV_MODE_FLAG_SAFETY_ARMED;
 
-  bool armed = msg->armed;
   currentHROVMessage_mutex.lock();
   currentHROVMessageV2->SetNavMode(mode);
   currentHROVMessageV2->Armed(armed);
@@ -559,17 +555,12 @@ void initROSInterface(int argc, char **argv) {
   encodingConfig_pub =
       nh.advertise<image_utils_ros_msgs::EncodingConfig>("encoding_config", 1);
 
-  ardusubNav_sub = nh.subscribe<sensor_msgs::Imu>(
-      "/mavros/imu/data", 1, boost::bind(HandleNewNavigationData, _1));
-
-  ardusubHUD_sub = nh.subscribe<mavros_msgs::VFR_HUD>(
-      "/mavros/vfr_hud", 1, boost::bind(HandleNewHUDData, _1));
-
-  ardusubState_sub = nh.subscribe<mavros_msgs::State>(
-      "/mavros/state", 1, boost::bind(HandleNewArdusubState, _1));
+  control->SetVfrHudCb(handleNewHUDData);
+  control->SetAttitudeCb(handleNewNavigationData);
+  control->SetHeartbeatCb(handleNewArdusubState);
 }
 
-int GetParams() {
+int getParams() {
   ros::NodeHandle nh("~");
   std::string dccommsId;
   if (nh.getParam("dccommsId", dccommsId)) {
@@ -624,7 +615,7 @@ int main(int argc, char **argv) {
   //// GET PARAMS
   ros::init(argc, argv, "rov_control");
 
-  if (GetParams())
+  if (getParams())
     return 1;
 
   Log->SetLogLevel(cpplogging::LogLevel::info);

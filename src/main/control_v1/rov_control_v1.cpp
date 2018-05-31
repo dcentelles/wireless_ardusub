@@ -117,7 +117,7 @@ static ros::Subscriber encodedImage_sub;
 static ros::Publisher encodingConfig_pub;
 
 merbots_whrov_msgs::hrov_settings::Ptr
-BuildSettingsMsg(telerobotics::HROVSettingsPtr settings) {
+buildSettingsMsg(telerobotics::HROVSettingsPtr settings) {
   merbots_whrov_msgs::hrov_settings::Ptr cstate(
       new merbots_whrov_msgs::hrov_settings());
   cstate.reset(new merbots_whrov_msgs::hrov_settings());
@@ -132,9 +132,9 @@ BuildSettingsMsg(telerobotics::HROVSettingsPtr settings) {
   return cstate;
 }
 
-void UpdateSettings(telerobotics::HROVSettingsPtr settings,
+void updateSettings(telerobotics::HROVSettingsPtr settings,
                     ROVCamera *rovCamera) {
-  merbots_whrov_msgs::hrov_settings::Ptr msg = BuildSettingsMsg(settings);
+  merbots_whrov_msgs::hrov_settings::Ptr msg = buildSettingsMsg(settings);
 
   Log->Info("Current image settings:\n"
             "\t(x0,y0): ({},{})\n"
@@ -163,7 +163,7 @@ void UpdateSettings(telerobotics::HROVSettingsPtr settings,
   encodingConfig_pub.publish(emsg);
 }
 
-void CancelCurrentMoveOrder() {
+void cancelCurrentMoveOrder() {
   Log->Info("Cancel current order of movement");
   keepHeading = false;
   mavros_msgs::OverrideRCIn rcMsg;
@@ -183,14 +183,14 @@ void operatorMsgParserWork(ROVCamera *rovCamera) {
     currentOperatorMessage_updated = false;
 
     auto settings = currentOperatorMessage->GetSettingsCopy();
-    UpdateSettings(settings, rovCamera);
+    updateSettings(settings, rovCamera);
 
     telerobotics::HROVMoveOrderPtr _moveOrder;
     currentHROVMessage_mutex.lock();
     if (currentHROVMessage->GetExpectedOrderSeqNumber() ==
         currentOperatorMessage->GetOrderSeqNumber()) {
       if (currentOperatorMessage->CancelLastOrderFlag()) {
-        CancelCurrentMoveOrder();
+        cancelCurrentMoveOrder();
         currentHROVMessage->LastOrderCancelledFlag(true);
         currentHROVMessage->Ready(true);
         currentHROVMessage_updated = true;
@@ -201,10 +201,10 @@ void operatorMsgParserWork(ROVCamera *rovCamera) {
           Log->Info("Message received from operator does not contain an order");
           break;
         case telerobotics::OperatorMessage::Move:
-          CancelCurrentMoveOrder();
+          cancelCurrentMoveOrder();
           Log->Info("Received order of movement");
           if (!currentHROVMessage->Ready())
-            CancelCurrentMoveOrder();
+            cancelCurrentMoveOrder();
           currentHROVMessage->LastOrderCancelledFlag(false);
           currentHROVMessage->Ready(false);
           currentHROVMessage->IncExpectedOrderSeqNumber();
@@ -290,7 +290,7 @@ void terminateOperatorMsgParserWorker(void) {
   currentOperatorMessage_cond.notify_one();
 }
 
-void HandleOperatorMessageReceived(ROVCamera &rovCamera) {
+void handleOperatorMessageReceived(ROVCamera &rovCamera) {
   Log->Info("Message received!");
   currentOperatorMessage_mutex.lock();
   rovCamera.GetCurrentRxState(currentOperatorMessage->GetBuffer());
@@ -457,7 +457,7 @@ void initMessages(void) {
   currentHROVPose_updated = false;
 }
 
-void HandleNewHUDData(const mavros_msgs::VFR_HUD::ConstPtr &msg,
+void handleNewHUDData(const mavros_msgs::VFR_HUD::ConstPtr &msg,
                       ROVCamera *rovCamera) {
   currentHROVMessage_mutex.lock();
   currentHROVMessage->SetYaw(msg->heading);
@@ -472,7 +472,7 @@ void HandleNewHUDData(const mavros_msgs::VFR_HUD::ConstPtr &msg,
   currentHROVPose_cond.notify_one();
 }
 
-void HandleNewNavigationData(const sensor_msgs::Imu::ConstPtr &msg,
+void handleNewNavigationData(const sensor_msgs::Imu::ConstPtr &msg,
                              ROVCamera *rovCamera) {
   // the following is not correct! x, y z is the components of a Quaternion, not
   // the Euler angles.
@@ -534,10 +534,10 @@ void initROSInterface(ros::NodeHandle &nh, int argc, char **argv,
 
   ardusubNav_sub = nh.subscribe<sensor_msgs::Imu>(
       "/mavros/imu/data", 1,
-      boost::bind(HandleNewNavigationData, _1, &rovCamera));
+      boost::bind(handleNewNavigationData, _1, &rovCamera));
 
   ardusubHUD_sub = nh.subscribe<mavros_msgs::VFR_HUD>(
-      "/mavros/vfr_hud", 1, boost::bind(HandleNewHUDData, _1, &rovCamera));
+      "/mavros/vfr_hud", 1, boost::bind(handleNewHUDData, _1, &rovCamera));
 
   currentHROVMessage_mutex.lock();
   currentHROVMessage->SetYaw(0);
@@ -554,7 +554,7 @@ void initROSInterface(ros::NodeHandle &nh, int argc, char **argv,
   startHeadingWorker();
 }
 
-int GetParams(ros::NodeHandle &nh) {
+int getParams(ros::NodeHandle &nh) {
   std::string cameraTopic;
   if (!nh.getParam("image", cameraTopic)) {
     ROS_ERROR("Failed to get param image");
@@ -627,7 +627,7 @@ int main(int argc, char **argv) {
   ros::init(argc, argv, "rov_control");
   ros::NodeHandle nh("~");
 
-  if (GetParams(nh))
+  if (getParams(nh))
     return 1;
 
   ROVCamera rovCamera(params.linkType);
@@ -647,7 +647,7 @@ int main(int argc, char **argv) {
     rovCamera.SetRxStateSize(telerobotics::OperatorMessage::MessageLength);
     rovCamera.SetMaxImageTrunkLength(
         pconfig.maxPacketLength - telerobotics::HROVMessage::MessageLength);
-    rovCamera.SetOrdersReceivedCallback(&HandleOperatorMessageReceived);
+    rovCamera.SetOrdersReceivedCallback(&handleOperatorMessageReceived);
 
     ros::Rate rate(30); // 30 hz
     initROSInterface(nh, argc, argv, rovCamera);

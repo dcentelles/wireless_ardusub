@@ -21,7 +21,6 @@ find_package(catkin REQUIRED COMPONENTS
   tf
   message_generation
   merbots_whrov_msgs
-  mavros_msgs
   sensor_msgs
   dynamic_reconfigure
   image_utils_ros_msgs
@@ -176,7 +175,6 @@ catkin_package(
     actionlib_msgs
     message_runtime
     merbots_whrov_msgs
-    mavros_msgs
     image_utils_ros_msgs
     sensor_msgs
     sensor_msgs

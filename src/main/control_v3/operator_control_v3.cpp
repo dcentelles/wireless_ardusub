@@ -36,7 +36,7 @@ struct Params {
 static Params params;
 static LoggerPtr Log;
 
-int GetParams() {
+int getParams() {
   ros::NodeHandle nh("~");
   std::string dccommsId;
   if (nh.getParam("dccommsId", dccommsId)) {
@@ -455,7 +455,7 @@ void OperatorController::CancelLastOrder(void) {
   // Puede que la orden se haya enviado ya, por lo que hay que cancelarla
   int oid = _requestedOID;
   _currentOperatorMessage_mutex.lock();
-  _currentOperatorMessage->CancelLastOrderFlag(true);
+  _currentOperatorMessage->CancelLastOrder(true);
   _currentOperatorMessage->SetOrderSeqNumber(oid);
   _currentOperatorMessage->SetNoOrder();
   _currentOperatorMessage_updated = true;
@@ -553,7 +553,7 @@ void OperatorController::ActionWorker(
       } while (!_lastOrderCancelled && !_hrovReady);
 
       _currentOperatorMessage_mutex.lock();
-      _currentOperatorMessage->CancelLastOrderFlag(false);
+      _currentOperatorMessage->CancelLastOrder(false);
       _currentOperatorMessage_updated = true;
       _currentOperatorMessage_mutex.unlock();
       _currentOperatorMessage_cond.notify_one();
@@ -604,7 +604,7 @@ void OperatorController::ActionWorker(
       } while (!_lastOrderCancelled && !_hrovReady);
 
       _currentOperatorMessage_mutex.lock();
-      _currentOperatorMessage->CancelLastOrderFlag(false);
+      _currentOperatorMessage->CancelLastOrder(false);
       _currentOperatorMessage_updated = true;
       _currentOperatorMessage_mutex.unlock();
       _currentOperatorMessage_cond.notify_one();
@@ -638,7 +638,7 @@ int main(int argc, char **argv) {
   Log = CreateLogger("operator_control_v3:main");
   Log->SetLogLevel(LogLevel::info);
   Log->Info("Init");
-  GetParams();
+  getParams();
 
   Log->LogToConsole(params.log2Console);
   ros::NodeHandle nh;
