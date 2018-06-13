@@ -24,6 +24,7 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   dynamic_reconfigure
   image_utils_ros_msgs
+  mavros
 )
 
 #find_package(catkin REQUIRED dynamic_reconfigure)
@@ -153,6 +154,12 @@ target_link_libraries(${ROV_V3} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${MAVLIN
 
 add_executable (NEDPublisher ${SRCPATH}main/debug_scripts/NEDPublisher.cpp)
 target_link_libraries(NEDPublisher ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
+
+add_executable (SITL_FDMReceiver ${SRCPATH}main/debug_scripts/SITL_FDMReceiver.cpp)
+target_link_libraries(SITL_FDMReceiver ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${TELEROBOTICS_GIT})
+
+add_executable (GPSInputTf ${SRCPATH}main/debug_scripts/GPSInputTf.cpp)
+target_link_libraries(GPSInputTf ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${TELEROBOTICS_GIT})
 
 install(TARGETS ${ROVA}
         LIBRARY DESTINATION "lib"
