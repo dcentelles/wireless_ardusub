@@ -42,8 +42,8 @@ int main(int argc, char **argv) {
 
   ///// GPS VISION
   double origin_lat = 0, origin_lon = 0, origin_alt = 0;
-  Eigen::Vector3d map_origin;  //!< geodetic origin [lla]
-  Eigen::Vector3d ecef_origin; //!< geocentric origin [m]
+  Eigen::Vector3d map_origin; //!< geodetic origin [lla]
+  Eigen::Vector3d ned_origin; //!< geocentric origin [m]
   map_origin = {origin_lat, origin_lon, origin_alt};
   /**
    * @brief Conversion of the origin from geodetic coordinates (LLA)
@@ -52,11 +52,12 @@ int main(int argc, char **argv) {
   // Constructor for a ellipsoid
   GeographicLib::Geocentric earth(GeographicLib::Constants::WGS84_a(),
                                   GeographicLib::Constants::WGS84_f());
-  earth.Forward(map_origin.x(), map_origin.y(), map_origin.z(), ecef_origin.x(),
-                ecef_origin.y(), ecef_origin.z());
 
   GeographicLib::LocalCartesian localNED(map_origin.x(), map_origin.y(),
                                          map_origin.z(), earth);
+
+  localNED.Forward(map_origin.x(), map_origin.y(), map_origin.z(),
+                   ned_origin.x(), ned_origin.y(), ned_origin.z());
 
   std::shared_ptr<GeographicLib::Geoid> egm96_5;
   egm96_5 = std::make_shared<GeographicLib::Geoid>("egm96-5", "", true, true);
@@ -94,10 +95,12 @@ int main(int argc, char **argv) {
     localNED.Forward(msg.lat / 1e7, msg.lon / 1e7, (msg.alt / (double)1e3),
                      ned_x, ned_y, ned_z);
 
-    log->Info("lat,lon,alt: {} : {} : {} ---- NED x,y,z {} : {} : {} ---- ECEF "
-              "x,y,z {} : {} : {}",
-              msg.lat, msg.lon, msg.alt, ned_x, ned_y, ned_z, ecef_x, ecef_y,
-              ecef_z);
+    //    log->Info("lat,lon,alt: {} : {} : {} ---- NED x,y,z {} : {} : {} ----
+    //    ECEF "
+    //              "x,y,z {} : {} : {}",
+    //              msg.lat, msg.lon, msg.alt, ned_x, ned_y, ned_z, ecef_x,
+    //              ecef_y,
+    //              ecef_z);
     ned_mutex.unlock();
 
   });
@@ -108,8 +111,15 @@ int main(int argc, char **argv) {
     pitch = attitude.pitch;
     roll = attitude.roll;
     attitude_mutex.unlock();
+//    tf::Quaternion quat =
+//        tf::createQuaternionFromRPY(roll, pitch, yaw).inverse();
 
-    log->Debug("R: {:9f} ; P: {:9f} ; Y: {:9f}", roll, pitch, yaw);
+//    log->Info("{} : {} : {} : {}", quat.getX(), quat.getY(), quat.getZ(),
+//              quat.getW());
+    // tfScalar iroll, ipitch, iyaw;
+    //    quat.getW());
+     log->Info("R: {:9f} ; P: {:9f} ; Y: {:9f}", roll, pitch, yaw);
+    // log->Info("R: {:9f} ; P: {:9f} ; Y: {:9f}", iroll, ipitch, iyaw);
   });
 
   std::thread GPSInput([&]() {
@@ -138,13 +148,13 @@ int main(int argc, char **argv) {
       //      bluerov2Pub.publish(bluerov2msg);
 
       Eigen::Vector3d geodetic;
-      Eigen::Vector3d current_ecef(ecef_origin.x() + position.x(),
-                                   ecef_origin.y() + position.y(),
-                                   ecef_origin.z() + position.z());
+      Eigen::Vector3d current_ned(ned_origin.x() + position.x(),
+                                  ned_origin.y() + position.y(),
+                                  ned_origin.z() + position.z());
 
       try {
-        earth.Reverse(current_ecef.x(), current_ecef.y(), current_ecef.z(),
-                      geodetic.x(), geodetic.y(), geodetic.z());
+        localNED.Reverse(current_ned.x(), current_ned.y(), current_ned.z(),
+                         geodetic.x(), geodetic.y(), geodetic.z());
       } catch (const std::exception &e) {
         ROS_INFO_STREAM("FGPS: Caught exception: " << e.what() << std::endl);
       }
@@ -199,7 +209,7 @@ int main(int argc, char **argv) {
     ned_mutex.unlock();
 
     tf::Quaternion attitude =
-        tf::createQuaternionFromRPY(last_roll, last_pitch, last_yaw);
+        tf::createQuaternionFromRPY(last_roll, last_pitch, last_yaw).normalize();
 
     earth_ekfrov_tf.setOrigin(tf::Vector3(last_x, last_y, last_z));
     earth_ekfrov_tf.setRotation(attitude);
