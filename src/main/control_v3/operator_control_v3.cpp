@@ -10,6 +10,7 @@
 #include <actionlib/server/simple_action_server.h>
 #include <cmath>
 #include <cpplogging/cpplogging.h>
+#include <dccomms_packets/VariableLengthPacket.h>
 #include <dccomms_utils/S100Stream.h>
 #include <dynamic_reconfigure/server.h>
 #include <image_utils_ros_msgs/EncodedImg.h>
@@ -17,11 +18,11 @@
 #include <merbots_whrov_msgs/state.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Joy.h>
+#include <telerobotics/HROVMessageV2.h>
+#include <telerobotics/Operator.h>
+#include <telerobotics/OperatorMessageV2.h>
 #include <vector>
 #include <wireless_ardusub/Constants.h>
-#include <telerobotics/HROVMessageV2.h>
-#include <telerobotics/OperatorMessageV2.h>
-#include <telerobotics/Operator.h>
 #include <wireless_ardusub/wireless_teleop_joyConfig.h>
 
 using namespace cpplogging;
@@ -31,6 +32,7 @@ using namespace telerobotics;
 struct Params {
   std::string serialPort, masterUri, dccommsId;
   bool log2Console, log2File;
+  int imageTrunkSize = DEFAULT_IMG_TRUNK_LENGTH;
 };
 
 static Params params;
@@ -80,6 +82,13 @@ int getParams() {
   } else {
     Log->Info("log2File: {}", log2File);
     params.log2File = log2File;
+  }
+
+  if (!nh.param("imageTrunkSize", params.imageTrunkSize,
+                params.imageTrunkSize)) {
+    Log->Info("imageTrunkSize set to default => {}", params.imageTrunkSize);
+  } else {
+    Log->Info("imageTrunkSize: {}", params.imageTrunkSize);
   }
 
   return 0;
@@ -163,6 +172,8 @@ private:
   void CancelLastOrder(void);
   void ActionWorker(const merbots_whrov_msgs::OrderGoalConstPtr &goal);
   void StartWorkers();
+
+  int GetImageSizeFromNumberOfPackets(int npackets);
 };
 
 void OperatorController::StartWorkers() {
@@ -179,7 +190,7 @@ void OperatorController::StartWorkers() {
       auto ready = _currentHROVMessage->Ready();
       state.roll = _currentHROVMessage->GetRoll();
       state.pitch = _currentHROVMessage->GetPitch();
-      state.altitude = _currentHROVMessage->GetAltitude();
+      state.altitude = _currentHROVMessage->GetZ();
       state.heading = _currentHROVMessage->GetHeading();
       state.keepingHeading = _currentHROVMessage->KeepingHeadingFlag();
       state.navMode = (int)_currentHROVMessage->GetNavMode();
@@ -198,7 +209,8 @@ void OperatorController::StartWorkers() {
       while (!_currentOperatorMessage_updated) {
         _currentOperatorMessage_cond.wait(lock);
       }
-      _node->SetDesiredState(_currentOperatorMessage->GetBuffer());
+      _node->SetTxState(_currentOperatorMessage->GetBuffer(),
+                        _currentHROVMessage->GetMsgSize());
       _currentOperatorMessage_updated = false;
     }
   });
@@ -256,11 +268,8 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
   _teleopOrder = TeleopOrder::Build();
   _node = CreateObject<Operator>();
   _node->SetLogLevel(LogLevel::info);
-  _node->SetMaxImageTrunkLength(100);
-  _node->SetRxStateSize(HROVMessageV2::MessageLength);
-  _node->SetTxStateSize(OperatorMessageV2::MessageLength);
 
-  if (params.log2File) {
+      if (params.log2File) {
     _node->LogToFile("op_v3_comms_node");
   }
 
@@ -271,17 +280,12 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
     _node->SetComms(s100Stream);
   } else {
     Info("CommsDevice type: dccomms::CommsDeviceService");
-    auto rxPacketSize = _node->GetRxPacketSize();
-    auto txPacketSize = _node->GetTxPacketSize();
-    Info("Transmitted packet size: {} bytes.\n"
-              "Received packet size: {} bytes.",
-              txPacketSize, rxPacketSize);
 
     std::string dccommsId = params.dccommsId;
     Info("dccomms ID: {}", dccommsId);
 
     dccomms::Ptr<IPacketBuilder> pb =
-        dccomms::CreateObject<SimplePacketBuilder>(rxPacketSize);
+        dccomms::CreateObject<VariableLengthPacketBuilder>();
 
     dccomms::Ptr<CommsDeviceService> commsService;
     commsService = dccomms::CreateObject<CommsDeviceService>(pb);
@@ -521,8 +525,7 @@ void OperatorController::ActionWorker(
   }
   case 2: // UPDATE IMAGE SETTINGS
     Log->info("Update image Settings order received");
-    auto nbytes =
-        _node->GetImageSizeFromNumberOfPackets(goal->image_config.size);
+    auto nbytes = GetImageSizeFromNumberOfPackets(goal->image_config.size);
     _settings->SetSettings(goal->image_config.roi_x0, goal->image_config.roi_y0,
                            goal->image_config.roi_x1, goal->image_config.roi_y1,
                            goal->image_config.roi_shift, nbytes);
@@ -631,6 +634,14 @@ void OperatorController::ActionWorker(
   _transmittingOrder = false;
   transmittingOrderLock.unlock();
   _transmittingOrder_cond.notify_one();
+}
+
+int OperatorController::GetImageSizeFromNumberOfPackets(int npackets) {
+  int fcsSize = 2;
+  int res =
+      params.imageTrunkSize * (npackets - 1) + params.imageTrunkSize - fcsSize;
+  res = res >= 0 ? res : 0;
+  return res;
 }
 
 int main(int argc, char **argv) {

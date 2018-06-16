@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+
+<launch>
+  <arg name="rviz" value="true"/>
+  <arg name="base_marker" value="aruco_marker_2"/>
+  
+  <node pkg="tf" type="static_transform_publisher" name="cuba2_world_ned_broadcaster" required="true" output="screen" args="0 0 0 -1.578 0 3.142 world ned_origin 5"/>
+
+  <node pkg="tf" type="static_transform_publisher" name="base_marker_broadcaster" required="true" output="screen" args="0 0 0 0 0 0 $(arg base_marker) base_marker 5"/>
+  
+  <node pkg="uwsim" type="uwsim" name="uwsim_cuba" output="screen" required="true" args="--configfile cuba2.xml --dataPath $(find uwsim)/data/scenes/"/>
+
+    <!-- RVIZ -->
+  <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz" args="-d $(find wireless_ardusub)/launch/uwsim/cuba2_config.rviz" />
+</launch>

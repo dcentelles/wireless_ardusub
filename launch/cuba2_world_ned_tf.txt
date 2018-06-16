@@ -1,0 +1,20 @@
+At time 1528971404.216
+- Translation: [0.000, 0.000, 0.000]
+- Rotation: in Quaternion [-0.705, 0.710, 0.000, 0.000]
+            in RPY (radian) [3.142, 0.000, -1.578]
+            in RPY (degree) [180.000, 0.000, -90.417]
+At time 1528971404.969
+- Translation: [0.000, 0.000, 0.000]
+- Rotation: in Quaternion [-0.705, 0.710, 0.000, 0.000]
+            in RPY (radian) [3.142, 0.000, -1.578]
+            in RPY (degree) [180.000, 0.000, -90.417]
+At time 1528971405.971
+- Translation: [0.000, 0.000, 0.000]
+- Rotation: in Quaternion [-0.705, 0.710, 0.000, 0.000]
+            in RPY (radian) [3.142, 0.000, -1.578]
+            in RPY (degree) [180.000, 0.000, -90.417]
+At time 1528971406.815
+- Translation: [0.000, 0.000, 0.000]
+- Rotation: in Quaternion [-0.705, 0.710, 0.000, 0.000]
+            in RPY (radian) [3.142, 0.000, -1.578]
+            in RPY (degree) [180.000, 0.000, -90.417]

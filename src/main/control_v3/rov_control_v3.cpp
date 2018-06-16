@@ -214,8 +214,8 @@ int angleDistance(int alpha, int beta) {
 
 double getKeepHeadingDecrease(int ahdiff) {
   uint32_t diff = abs(ahdiff);
-  double m = 30. / 180;
-  return diff * m;
+  double m = diff / 180. * 100;
+  return m;
 }
 
 void keepHeadingIteration(void) {
@@ -228,7 +228,7 @@ void keepHeadingIteration(void) {
   else
     right = true;
 
-  double vel = getKeepHeadingDecrease(30);
+  double vel = getKeepHeadingDecrease(ahdiff);
   if (ahdiff > 1) {
     if (right) {
       Log->Debug("Turn left");
@@ -378,7 +378,8 @@ void messageSenderWork() {
     while (!currentHROVMessage_updated) {
       currentHROVMessage_cond.wait(lock);
     }
-    commsNode->SetCurrentTxState(currentHROVMessageV2->GetBuffer());
+    commsNode->SetCurrentTxState(currentHROVMessageV2->GetBuffer(),
+                                 currentHROVMessageV2->GetMsgSize());
     currentHROVMessage_updated = false;
   }
 }
@@ -466,8 +467,10 @@ void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
   if (!commsNode->SendingCurrentImage()) {
     lastImageSize =
         emsg.max_size <= msg->img.size() ? emsg.max_size : msg->img.size();
-    Log->Info("Sending the new captured image... ({} bytes)", lastImageSize);
-    commsNode->SendImage((void *)msg->img.data(), lastImageSize);
+    if (lastImageSize > 0) {
+      Log->Info("Sending the new captured image... ({} bytes)", lastImageSize);
+      commsNode->SendImage((void *)msg->img.data(), lastImageSize);
+    }
   } else {
     if (lastImageSize != emsg.max_size) {
       commsNode->CancelLastImage();
@@ -497,7 +500,7 @@ void handleNewNavigationData(const mavlink_attitude_t &attitude) {
   pitch = attitude.pitch;
   roll = attitude.roll;
 
-  Log->Info("yaw: {} ; pitch: {} ; roll: {}", yaw, pitch, roll);
+  Log->Debug("yaw: {} ; pitch: {} ; roll: {}", yaw, pitch, roll);
   int rx, ry, rz;
   rx = telerobotics::utils::GetDiscreteYaw(roll);
   ry = telerobotics::utils::GetDiscreteYaw(pitch);
@@ -631,9 +634,7 @@ int main(int argc, char **argv) {
   startWorkers();
   commsNode = dccomms::CreateObject<ROV>();
 
-  commsNode->SetRxStateSize(OperatorMessageV2::MessageLength);
-  commsNode->SetTxStateSize(HROVMessageV2::MessageLength);
-  commsNode->SetMaxImageTrunkLength(100);
+  commsNode->SetImageTrunkLength(DEFAULT_IMG_TRUNK_LENGTH);
 
   if (params.log2File) {
     Log->LogToFile("rov_v3_main");
@@ -650,17 +651,12 @@ int main(int argc, char **argv) {
     commsNode->SetComms(stream);
   } else {
     Log->Info("CommsDevice type: dccomms::CommsDeviceService");
-    auto rxPacketSize = commsNode->GetRxPacketSize();
-    auto txPacketSize = commsNode->GetTxPacketSize();
-    Log->Info("Transmitted packet size: {} bytes.\n"
-              "Received packet size: {} bytes.",
-              txPacketSize, rxPacketSize);
 
     std::string dccommsId = params.dccommsId;
     Log->Info("dccomms ID: {}", dccommsId);
 
     dccomms::Ptr<IPacketBuilder> pb =
-        dccomms::CreateObject<SimplePacketBuilder>(rxPacketSize);
+        dccomms::CreateObject<VariableLengthPacketBuilder>();
 
     dccomms::Ptr<CommsDeviceService> commsService;
     commsService = dccomms::CreateObject<CommsDeviceService>(pb);
@@ -675,7 +671,7 @@ int main(int argc, char **argv) {
 
   commsNode->SetOrdersReceivedCallback([](ROV &receiver) {
     Log->Info("Orders received!");
-    uint8_t state[OperatorMessageV2::MessageLength];
+    uint8_t state[300];
     receiver.GetCurrentRxState(state);
 
     currentOperatorMessage_mutex.lock();
@@ -689,7 +685,8 @@ int main(int argc, char **argv) {
   commsNode->Start();
 
   currentHROVMessageV2->Ready(true);
-  commsNode->SetCurrentTxState(currentHROVMessageV2->GetBuffer());
+  commsNode->SetCurrentTxState(currentHROVMessageV2->GetBuffer(),
+                               currentHROVMessageV2->GetMsgSize());
 
   try {
 

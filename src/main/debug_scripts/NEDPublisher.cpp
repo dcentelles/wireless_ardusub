@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
   auto log = CreateLogger("GCS");
   log->SetLogLevel(debug);
   log->FlushLogOn(debug);
-  uint16_t localPort = 14550;
+  uint16_t localPort = 14551;
   std::shared_ptr<GCSv1> control(new GCSv1(localPort));
 
   ros::init(argc, argv, "NEDPublisher");
@@ -36,10 +36,11 @@ int main(int argc, char **argv) {
     tfScalar roll = attitude.roll;
     rotMat.setRPY(roll, pitch, yaw);
     rotMat.inverse().getRPY(roll, pitch, yaw);
-    log->Info("R: {:9f} ; P: {:9f} ; Y: {:9f}", roll, pitch, yaw);
+    log->Info("(inverse) R: {:9f} ; P: {:9f} ; Y: {:9f}", roll, pitch, yaw);
   });
 
   control->EnableGPSMock(true);
+  control->EnableManualControl(false);
   control->Arm(false);
 
   control->Start();

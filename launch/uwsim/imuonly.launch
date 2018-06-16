@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+
+<launch>
+  <arg name="rviz" value="true"/>
+ 
+  <node pkg="tf" type="static_transform_publisher" name="cuba2_world_ned_broadcaster" required="true" output="screen" args="0 0 0 0 3.1416 1.578 base_marker ned_origin 5"/>
+
+    <!-- RVIZ -->
+</launch>

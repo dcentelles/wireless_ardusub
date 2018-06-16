@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
   log->SetLogLevel(info);
   log->FlushLogOn(debug);
   // ros::Publisher fake_gps_pub;
-  uint16_t localPort = 14550;
+  uint16_t localPort = 14551;
   std::shared_ptr<GCSv1> control(new GCSv1(localPort));
 
   ros::init(argc, argv, "simple_bluerov2_publisher");
@@ -34,6 +34,7 @@ int main(int argc, char **argv) {
   control->FlushLogOn(debug);
 
   control->EnableGPSMock(false);
+  control->EnableManualControl(false);
   // control->SetManualControl(0, 0, 0, 0);
   control->Arm(false);
   control->Start();
@@ -64,11 +65,13 @@ int main(int argc, char **argv) {
 
   std::mutex ned_mutex;
   double ecef_x, ecef_y, ecef_z, ned_x, ned_y, ned_z;
+  int32_t latitude, longitude;
 
   std::mutex attitude_mutex;
   tfScalar yaw;
   tfScalar pitch;
   tfScalar roll;
+  bool gps_mock = false;
 
   control->SetLocalPositionNEDCb([&](const mavlink_local_position_ned_t &msg) {
     log->Debug("LOCAL_POSITION_NED:"
@@ -101,6 +104,9 @@ int main(int argc, char **argv) {
     //              msg.lat, msg.lon, msg.alt, ned_x, ned_y, ned_z, ecef_x,
     //              ecef_y,
     //              ecef_z);
+    latitude = msg.lat;
+    longitude = msg.lon;
+
     ned_mutex.unlock();
 
   });
@@ -111,41 +117,37 @@ int main(int argc, char **argv) {
     pitch = attitude.pitch;
     roll = attitude.roll;
     attitude_mutex.unlock();
-//    tf::Quaternion quat =
-//        tf::createQuaternionFromRPY(roll, pitch, yaw).inverse();
+    //    tf::Quaternion quat =
+    //        tf::createQuaternionFromRPY(roll, pitch, yaw).inverse();
 
-//    log->Info("{} : {} : {} : {}", quat.getX(), quat.getY(), quat.getZ(),
-//              quat.getW());
+    //    log->Info("{} : {} : {} : {}", quat.getX(), quat.getY(), quat.getZ(),
+    //              quat.getW());
     // tfScalar iroll, ipitch, iyaw;
     //    quat.getW());
-     log->Info("R: {:9f} ; P: {:9f} ; Y: {:9f}", roll, pitch, yaw);
+    log->Info("R: {:9f} ; P: {:9f} ; Y: {:9f}", roll, pitch, yaw);
     // log->Info("R: {:9f} ; P: {:9f} ; Y: {:9f}", iroll, ipitch, iyaw);
   });
 
   std::thread GPSInput([&]() {
     while (1) {
-      tf::StampedTransform earth_rov_tf;
+      tf::StampedTransform ned_origin_rov_tf;
+      mavlink_gps_input_t gpsinput;
       try {
         auto now = ros::Time::now();
-        listener.waitForTransform("earth", "rov", now, ros::Duration(3.0));
-        listener.lookupTransform("earth", "rov", ros::Time(0), earth_rov_tf);
+        listener.waitForTransform("ned_origin", "rov", now, ros::Duration(1.0));
+        listener.lookupTransform("ned_origin", "rov", ros::Time(0),
+                                 ned_origin_rov_tf);
 
       } catch (tf::TransformException ex) {
         ROS_ERROR("%s", ex.what());
+        log->Warn("GPS lost. Sending last filtered position...");
         ros::Duration(1.0).sleep();
-        continue;
+        gpsinput.lat = latitude; // [degrees * 1e7]
+        gpsinput.lon = longitude; // [degrees * 1e7]
       }
 
       tf::Vector3 position;
-      position = earth_rov_tf.getOrigin();
-
-      //      geometry_msgs::Pose bluerov2msg;
-      //      bluerov2msg.position.x = position.x();
-      //      bluerov2msg.position.y = position.y();
-      //      bluerov2msg.position.z = position.z();
-      //      tf::quaternionTFToMsg(earth_rov_tf.getRotation(),
-      //                            bluerov2msg.orientation);
-      //      bluerov2Pub.publish(bluerov2msg);
+      position = ned_origin_rov_tf.getOrigin();
 
       Eigen::Vector3d geodetic;
       Eigen::Vector3d current_ned(ned_origin.x() + position.x(),
@@ -157,7 +159,11 @@ int main(int argc, char **argv) {
                          geodetic.x(), geodetic.y(), geodetic.z());
       } catch (const std::exception &e) {
         ROS_INFO_STREAM("FGPS: Caught exception: " << e.what() << std::endl);
+        continue;
       }
+
+      gpsinput.lat = geodetic.x() * 1e7; // [degrees * 1e7]
+      gpsinput.lon = geodetic.y() * 1e7; // [degrees * 1e7]
 
       // BY GPS_INPUT
       uint32_t IGNORE_VELOCITIES_AND_ACCURACY =
@@ -167,10 +173,7 @@ int main(int argc, char **argv) {
            GPS_INPUT_IGNORE_FLAG_HORIZONTAL_ACCURACY |
            GPS_INPUT_IGNORE_FLAG_VERTICAL_ACCURACY);
 
-      mavlink_gps_input_t gpsinput;
       gpsinput.gps_id = 0;
-      gpsinput.lat = geodetic.x() * 1e7; // [degrees * 1e7]
-      gpsinput.lon = geodetic.y() * 1e7; // [degrees * 1e7]
       gpsinput.fix_type = 3;
       gpsinput.hdop = 1;
       gpsinput.vdop = 1;
@@ -186,7 +189,7 @@ int main(int argc, char **argv) {
   ros::Rate rate(10);
   tf::TransformBroadcaster rovVisionPositionBroadcaster;
   tf::TransformBroadcaster ekfBroadcaster;
-  tf::StampedTransform earth_ekfrov_tf;
+  tf::StampedTransform ned_origin_ekfrov_tf;
   tf::StampedTransform camera_rov_tf;
 
   while (ros::ok()) {
@@ -209,13 +212,14 @@ int main(int argc, char **argv) {
     ned_mutex.unlock();
 
     tf::Quaternion attitude =
-        tf::createQuaternionFromRPY(last_roll, last_pitch, last_yaw).normalize();
+        tf::createQuaternionFromRPY(0, 0, last_yaw)
+            .normalize();
 
-    earth_ekfrov_tf.setOrigin(tf::Vector3(last_x, last_y, last_z));
-    earth_ekfrov_tf.setRotation(attitude);
+    ned_origin_ekfrov_tf.setOrigin(tf::Vector3(last_x, last_y, last_z));
+    ned_origin_ekfrov_tf.setRotation(attitude);
 
     ekfBroadcaster.sendTransform(tf::StampedTransform(
-        earth_ekfrov_tf, ros::Time::now(), "earth", "ekfrov"));
+        ned_origin_ekfrov_tf, ros::Time::now(), "ned_origin", "ekfrov"));
 
     ros::spinOnce();
     rate.sleep();

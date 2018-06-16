@@ -134,6 +134,8 @@ SET(ROV_V2 rov_v2)
 SET(OP_V2 op_v2)
 SET(ROV_V3 rov_v3)
 SET(OP_V3 op_v3)
+SET(ROV_V4 rov_v4)
+SET(OP_V4 op_v4)
 
 add_executable (${ROV_V1} ${SRCPATH}main/control_v1/rov_control_v1.cpp)
 target_link_libraries(${ROV_V1} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES})
