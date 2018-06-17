@@ -63,16 +63,54 @@ Visualization Manager:
           Value: false
         amphora2-2:
           Value: false
-        aruco_marker_0:
-          Value: false
         aruco_marker_1:
-          Value: false
+          Value: true
+        aruco_marker_10:
+          Value: true
+        aruco_marker_11:
+          Value: true
+        aruco_marker_13:
+          Value: true
+        aruco_marker_14:
+          Value: true
+        aruco_marker_15:
+          Value: true
+        aruco_marker_16:
+          Value: true
+        aruco_marker_17:
+          Value: true
+        aruco_marker_18:
+          Value: true
+        aruco_marker_19:
+          Value: true
         aruco_marker_2:
-          Value: false
+          Value: true
+        aruco_marker_20:
+          Value: true
+        aruco_marker_21:
+          Value: true
+        aruco_marker_22:
+          Value: true
+        aruco_marker_23:
+          Value: true
+        aruco_marker_24:
+          Value: true
+        aruco_marker_25:
+          Value: true
         aruco_marker_3:
-          Value: false
+          Value: true
         aruco_marker_4:
-          Value: false
+          Value: true
+        aruco_marker_5:
+          Value: true
+        aruco_marker_6:
+          Value: true
+        aruco_marker_7:
+          Value: true
+        aruco_marker_8:
+          Value: true
+        aruco_marker_9:
+          Value: true
         base_marker:
           Value: true
         bluerov2:
@@ -81,31 +119,17 @@ Visualization Manager:
           Value: false
         bluerov2/kinematic_base:
           Value: false
+        bluerov2_camera:
+          Value: true
+        bluerov2_ghost:
+          Value: true
+        bluerov2_ghost/base_link:
+          Value: true
+        bluerov2_ghost/kinematic_base:
+          Value: true
         bluerov2_s100:
           Value: false
-        camera:
-          Value: true
-        camera_27:
-          Value: true
-        camera_28:
-          Value: true
-        camera_29:
-          Value: true
-        fcu:
-          Value: true
-        fcu_frd:
-          Value: true
         floor:
-          Value: true
-        local_origin:
-          Value: true
-        local_origin_ned:
-          Value: true
-        marker_27:
-          Value: true
-        marker_28:
-          Value: true
-        marker_29:
           Value: true
         ned_origin:
           Value: true
@@ -115,7 +139,7 @@ Visualization Manager:
           Value: false
       Marker Scale: 1
       Name: TF
-      Show Arrows: true
+      Show Arrows: false
       Show Axes: true
       Show Names: true
       Tree:
@@ -128,32 +152,66 @@ Visualization Manager:
             {}
           amphora2-2:
             {}
-          aruco_marker_0:
-            {}
           aruco_marker_1:
+            {}
+          aruco_marker_10:
+            {}
+          aruco_marker_11:
+            {}
+          aruco_marker_13:
+            {}
+          aruco_marker_14:
+            {}
+          aruco_marker_15:
+            {}
+          aruco_marker_16:
+            {}
+          aruco_marker_17:
+            {}
+          aruco_marker_18:
+            {}
+          aruco_marker_19:
             {}
           aruco_marker_2:
             base_marker:
-              camera:
-                {}
-              marker_27:
-                camera_27:
-                  {}
-                marker_28:
-                  camera_28:
-                    {}
-                marker_29:
-                  camera_29:
-                    {}
+              {}
+          aruco_marker_20:
+            {}
+          aruco_marker_21:
+            {}
+          aruco_marker_22:
+            {}
+          aruco_marker_23:
+            {}
+          aruco_marker_24:
+            {}
+          aruco_marker_25:
+            {}
           aruco_marker_3:
             {}
           aruco_marker_4:
+            {}
+          aruco_marker_5:
+            {}
+          aruco_marker_6:
+            {}
+          aruco_marker_7:
+            {}
+          aruco_marker_8:
+            {}
+          aruco_marker_9:
             {}
           bluerov2:
             bluerov2/base_link:
               bluerov2/kinematic_base:
                 {}
+              bluerov2_camera:
+                {}
               bluerov2_s100:
+                {}
+          bluerov2_ghost:
+            bluerov2_ghost/base_link:
+              bluerov2_ghost/kinematic_base:
                 {}
           floor:
             {}
@@ -188,25 +246,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 3.33323312
+      Distance: 3.01268911
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.0599999987
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.0558040403
-        Y: -0.485310525
-        Z: 0.838429272
+        X: 0.265731961
+        Y: -0.620525181
+        Z: 0.754023135
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.0500000007
       Invert Z Axis: true
       Name: Current View
       Near Clip Distance: 0.00999999978
-      Pitch: 0.470202327
+      Pitch: 0.455203176
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.49356627
+      Yaw: 4.00855494
     Saved: ~
 Window Geometry:
   Displays:

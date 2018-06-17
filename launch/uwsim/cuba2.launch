@@ -4,7 +4,7 @@
   <arg name="rviz" value="true"/>
   <arg name="base_marker" value="aruco_marker_2"/>
   
-  <node pkg="tf" type="static_transform_publisher" name="cuba2_world_ned_broadcaster" required="true" output="screen" args="0 0 0 -1.578 0 3.142 world ned_origin 5"/>
+  <node pkg="tf" type="static_transform_publisher" name="cuba2_world_ned_broadcaster" required="true" output="screen" args="0 0 -4.25 -1.578 0 3.142 world ned_origin 5"/>
 
   <node pkg="tf" type="static_transform_publisher" name="base_marker_broadcaster" required="true" output="screen" args="0 0 0 0 0 0 $(arg base_marker) base_marker 5"/>
   
@@ -12,4 +12,6 @@
 
     <!-- RVIZ -->
   <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz" args="-d $(find wireless_ardusub)/launch/uwsim/cuba2_config.rviz" />
+
+  <node pkg="uwsim" type="followMarker" name="bluerov2_follow_marker" required="true" output="screen" args="/bluerov2_ghost/odom 0.10 0.3 -5 3.1416 0 -0.55923 0.01 0.7 0 0 1" />
 </launch>
