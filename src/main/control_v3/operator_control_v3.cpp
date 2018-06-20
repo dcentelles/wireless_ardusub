@@ -219,6 +219,7 @@ void OperatorController::StartWorkers() {
 
   _teleopOrderWorker = std::thread([this]() {
     while (1) {
+      std::this_thread::sleep_for(chrono::milliseconds(20));
       std::unique_lock<std::mutex> lock(_transmittingOrder_mutex);
       while (_transmittingOrder) {
         _transmittingOrder_cond.wait(lock);
@@ -228,7 +229,6 @@ void OperatorController::StartWorkers() {
       _currentOperatorMessage_mutex.unlock();
       _currentOperatorMessage_updated = true;
       _currentOperatorMessage_cond.notify_one();
-      std::this_thread::sleep_for(chrono::milliseconds(20));
     }
   });
 }
@@ -425,6 +425,10 @@ void OperatorController::JoyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
     _teleopOrder->SetFlyMode(ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD);
   } else if (RisingEdge(joy, 0)) {
     _teleopOrder->SetFlyMode(ARDUSUB_NAV_MODE::NAV_MANUAL);
+  } else if (RisingEdge(joy, 2)) {
+    _teleopOrder->SetFlyMode(ARDUSUB_NAV_MODE::NAV_POS_HOLD);
+  } else if (RisingEdge(joy, 5)) {
+    _teleopOrder->SetFlyMode(ARDUSUB_NAV_MODE::NAV_GUIDED);
   }
   std::string modeName = "";
   switch (_teleopOrder->GetFlyMode()) {
@@ -436,6 +440,12 @@ void OperatorController::JoyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
     break;
   case ARDUSUB_NAV_MODE::NAV_MANUAL:
     modeName = "MANUAL";
+    break;
+  case ARDUSUB_NAV_MODE::NAV_POS_HOLD:
+    modeName = "POS HOLD";
+    break;
+  case ARDUSUB_NAV_MODE::NAV_GUIDED:
+    modeName = "GUIDED";
     break;
   default:
     break;
@@ -540,7 +550,8 @@ void OperatorController::ActionWorker(
     Log->info("Go to request received");
     _currentHROVMessage->SetNavMode(ARDUSUB_NAV_MODE::NAV_GUIDED);
     _currentOperatorMessage->SetGoToOrder(goal->x * 100, goal->y * 100,
-                                          goal->depth * 100, 0);
+                                          goal->depth * 100,
+                                          goal->keep_heading_degrees);
     break;
   }
   }

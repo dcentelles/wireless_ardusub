@@ -361,7 +361,7 @@ void handleNewOrder() {
         break;
       }
       case OperatorMessageV2::OrderType::GoTo: {
-        //auto goTo = currentOperatorMessage->GetGoToOrder();
+        // auto goTo = currentOperatorMessage->GetGoToOrder();
         break;
       }
       }
@@ -416,6 +416,14 @@ void operatorMsgParserWork() {
       case ARDUSUB_NAV_MODE::NAV_MANUAL:
         modeName = "MANUAL";
         control->SetManualMode();
+        break;
+      case ARDUSUB_NAV_MODE::NAV_POS_HOLD:
+        modeName = "POS HOLD";
+        control->SetFlyMode(FLY_MODE_R::POS_HOLD);
+        break;
+      case ARDUSUB_NAV_MODE::NAV_GUIDED:
+        modeName = "GUIDED";
+        control->SetFlyMode(FLY_MODE_R::GUIDED);
         break;
       default:
         break;

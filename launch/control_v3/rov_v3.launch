@@ -23,11 +23,10 @@
   </group>
   <group if="$(arg launchImage)">
     <include file="$(find image_utils_ros)/launch/encoder.launch">
-      <param name="image" value="$(arg image)" type="string"/>
+      <arg name="image" value="$(arg image)"/>
       <arg name="encodedImage" value="$(arg encodedImage)"/>
       <arg name="imageTransport" value="$(arg imageTransport)"/>
       <arg name="namespace" value="$(arg namespace)"/>
     </include>
-    <include if="$(arg launchImage)" file="$(find usb_cam)/launch/usb_cam-test.launch"/>
   </group>
 </launch>
