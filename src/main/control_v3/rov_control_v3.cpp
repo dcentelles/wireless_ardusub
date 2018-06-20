@@ -656,7 +656,7 @@ int main(int argc, char **argv) {
     return 1;
 
   Log->SetLogLevel(cpplogging::LogLevel::info);
-  Log->FlushLogOn(cpplogging::LogLevel::info);
+  //Log->FlushLogOn(cpplogging::LogLevel::info);
   Log->LogToConsole(params.log2Console);
 
   control->SetLogName("GCS");
