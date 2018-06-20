@@ -151,6 +151,8 @@ private:
   uint16_t _camera_tilt;
   bool _initLT;
   bool _initRT;
+  int _lastSeq = -1;
+  int _lastOtype = -1;
   std::vector<int> _previous_buttons;
   image_utils_ros_msgs::EncodedImg _encodedImgMsg;
   uint8_t _imgBuffer[telerobotics::MAX_IMG_SIZE];
@@ -199,6 +201,11 @@ void OperatorController::StartWorkers() {
       state.armed = _currentHROVMessage->Armed();
       _currentHROVMessage_updated = false;
       lock.unlock();
+      Info("CONFIRMED STATE - OID: {} ; CC: {} ; RDY: {} ; HD: {} ; NAV: {} ; "
+           "ARMED: {} ; x:y:z: "
+           "{} : {} : {}",
+           oid, cancelled ? 1 : 0, ready ? 1 : 0, state.heading, state.navMode,
+           state.armed ? 1 : 0, state.x, state.y, state.altitude);
 
       _currentHROVState_pub.publish(state);
       NotifyNewHROVState(ready, oid, cancelled);
@@ -210,6 +217,12 @@ void OperatorController::StartWorkers() {
       std::unique_lock<std::mutex> lock(_currentOperatorMessage_mutex);
       while (!_currentOperatorMessage_updated) {
         _currentOperatorMessage_cond.wait(lock);
+      }
+      auto seq = _currentOperatorMessage->GetOrderSeqNumber();
+      if (_lastSeq != seq) {
+        auto otype = _currentOperatorMessage->GetOrderType();
+        Info("OWN STATE: SQ: {} ; OT: {}", seq, otype);
+        _lastSeq = seq;
       }
       _node->SetTxState(_currentOperatorMessage->GetBuffer(),
                         _currentHROVMessage->GetMsgSize());

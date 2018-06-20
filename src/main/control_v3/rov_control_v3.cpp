@@ -380,6 +380,23 @@ void messageSenderWork() {
     }
     commsNode->SetCurrentTxState(currentHROVMessageV2->GetBuffer(),
                                  currentHROVMessageV2->GetMsgSize());
+
+    auto oid = currentHROVMessageV2->GetExpectedOrderSeqNumber();
+    auto cancelled = currentHROVMessageV2->LastOrderCancelledFlag();
+    auto ready = currentHROVMessageV2->Ready();
+    auto roll = currentHROVMessageV2->GetRoll();
+    auto pitch = currentHROVMessageV2->GetPitch();
+    auto x = currentHROVMessageV2->GetX();
+    auto y = currentHROVMessageV2->GetY();
+    auto altitude = currentHROVMessageV2->GetZ();
+    auto heading = currentHROVMessageV2->GetHeading();
+    auto navMode = (int)currentHROVMessageV2->GetNavMode();
+    auto armed = currentHROVMessageV2->Armed();
+    Log->Info("OWN STATE - OID: {} ; CC: {} ; RDY: {} ; HD: {} ; NAV: {} ; "
+              "ARMED: {} ; x:y:z: "
+              "{} : {} : {}",
+              oid, cancelled ? 1 : 0, ready ? 1 : 0, heading, navMode,
+              armed ? 1 : 0, x, y, altitude);
     currentHROVMessage_updated = false;
   }
 }
