@@ -1,15 +1,10 @@
-/*
- * Adaptation of:
- *  File: bluerov_apps/src/teleop_joy.cpp
- *  Author: Josh Villbrandt <josh@javconcepts.com>
- *  Date: February 2016
- *  Description: Manual remote control of ROVs like the bluerov_apps.
- * By centelld@uji.es for the wireless bluerov project
- */
-
+#include <GeographicLib/Geocentric.hpp>
+#include <GeographicLib/Geoid.hpp>
+#include <GeographicLib/LocalCartesian.hpp>
 #include <chrono>
 #include <cpplogging/cpplogging.h>
 #include <dccomms_utils/S100Stream.h>
+#include <eigen_conversions/eigen_msg.h>
 #include <image_utils_ros_msgs/EncodedImg.h>
 #include <image_utils_ros_msgs/EncodingConfig.h>
 #include <mavlink_cpp/GCSv1.h>
@@ -93,6 +88,7 @@ static HROVPose currentHROVPose;
 static std::mutex currentHROVPose_mutex;
 static std::condition_variable currentHROVPose_cond;
 static bool currentHROVPose_updated;
+static bool home_set;
 
 void notifyHROVMessageUpdated() {
   currentHROVMessage_updated = true;
@@ -364,6 +360,10 @@ void handleNewOrder() {
         updateImageSettings(lastSettings);
         break;
       }
+      case OperatorMessageV2::OrderType::GoTo: {
+        //auto goTo = currentOperatorMessage->GetGoToOrder();
+        break;
+      }
       }
       currentHROVMessage_mutex.lock();
       currentHROVMessageV2->IncExpectedOrderSeqNumber();
@@ -405,15 +405,15 @@ void operatorMsgParserWork() {
 
       std::string modeName = "";
       switch (lastOrder->GetFlyMode()) {
-      case FLY_MODE::DEPTH_HOLD:
+      case ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD:
         modeName = "DEPTH HOLD";
         control->SetDepthHoldMode();
         break;
-      case FLY_MODE::STABILIZE:
+      case ARDUSUB_NAV_MODE::NAV_STABILIZE:
         modeName = "STABILIZE";
         control->SetStabilizeMode();
         break;
-      case FLY_MODE::MANUAL:
+      case ARDUSUB_NAV_MODE::NAV_MANUAL:
         modeName = "MANUAL";
         control->SetManualMode();
         break;
@@ -437,16 +437,18 @@ void operatorMsgParserWork() {
       double yNorm = getJoyAxisNormalized(y);
       double zNorm = getJoyAxisNormalized(z);
       double rNorm = getJoyAxisNormalized(r);
+
       xVel = ceil(arduSubXYR(xNorm));
       yVel = ceil(arduSubXYR(yNorm));
       zVel = ceil(arduSubZ(zNorm));
       if (!keepOrientation)
         rVel = ceil(arduSubXYR(rNorm));
 
-      Log->Info(
-          "Manual control: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
-          xVel, yVel, zVel, rVel, lastOrder->Arm() ? "true" : "false",
-          modeName);
+      //      Log->Info(
+      //          "Manual control: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ;
+      //          Mode: {}",
+      //          xVel, yVel, zVel, rVel, lastOrder->Arm() ? "true" : "false",
+      //          modeName);
 
       control->SetManualControl(xVel, yVel, zVel, rVel);
       control->Arm(lastOrder->Arm());
@@ -481,7 +483,7 @@ void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
 void handleNewHUDData(const mavlink_vfr_hud_t &msg) {
   currentHROVMessage_mutex.lock();
   currentHROVMessageV2->SetHeading(msg.heading);
-  currentHROVMessageV2->SetZ(msg.alt);
+  currentHROVMessageV2->SetZ(msg.alt * 100);
   currentHROVMessage_updated = true;
   currentHROVMessage_mutex.unlock();
   currentHROVMessage_cond.notify_one();
@@ -536,6 +538,12 @@ void handleNewArdusubState(const mavlink_heartbeat_t &msg) {
     break;
   case FLY_MODE_R::DEPTH_HOLD:
     mode = ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD;
+    break;
+  case FLY_MODE_R::POS_HOLD:
+    mode = ARDUSUB_NAV_MODE::NAV_POS_HOLD;
+    break;
+  case FLY_MODE_R::GUIDED:
+    mode = ARDUSUB_NAV_MODE::NAV_GUIDED;
     break;
   default:
     mode = ARDUSUB_NAV_MODE::NAV_UNKNOWN;
@@ -614,6 +622,7 @@ int getParams() {
 int main(int argc, char **argv) {
   Log = CreateLogger("TeleopROV");
   Log->Info("Init");
+  Log->SetAsyncMode(true);
 
   //// GET PARAMS
   ros::init(argc, argv, "rov_control");
@@ -688,6 +697,86 @@ int main(int argc, char **argv) {
   commsNode->SetCurrentTxState(currentHROVMessageV2->GetBuffer(),
                                currentHROVMessageV2->GetMsgSize());
 
+  ///// GPS
+  Eigen::Vector3d map_origin; //!< geodetic origin [lla]
+
+  // Constructor for a ellipsoid
+  GeographicLib::Geocentric earth(GeographicLib::Constants::WGS84_a(),
+                                  GeographicLib::Constants::WGS84_f());
+
+  GeographicLib::LocalCartesian localNED;
+
+  std::shared_ptr<GeographicLib::Geoid> egm96_5;
+  egm96_5 = std::make_shared<GeographicLib::Geoid>("egm96-5", "", true, true);
+
+  control->SetHomeUpdatedCb([&](const mavlink_home_position_t &msg) {
+
+    map_origin = {msg.latitude / 1e7, msg.longitude / 1e7, msg.altitude / 1e3};
+
+    localNED = GeographicLib::LocalCartesian(map_origin.x(), map_origin.y(),
+                                             map_origin.z(), earth);
+    home_set = true;
+  });
+
+  control->SetLocalPositionNEDCb([&](const mavlink_local_position_ned_t &msg) {
+    Log->Info("LOCAL_POSITION_NED:"
+              "\ttime_boot_ms: {}\n"
+              "\tx: {}\n"
+              "\ty: {}\n"
+              "\tz: {}\n"
+              "\tvx: {}\n"
+              "\tvy: {}\n"
+              "\tvz: {}\n",
+              msg.time_boot_ms, msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz);
+    currentHROVMessage_mutex.lock();
+    currentHROVMessageV2->SetX(msg.x * 100);
+    currentHROVMessageV2->SetY(msg.y * 100);
+    currentHROVMessage_updated = true;
+    currentHROVMessage_mutex.unlock();
+    currentHROVMessage_cond.notify_one();
+
+  });
+
+  control->SetGlobalPositionInt([&](const mavlink_global_position_int_t &msg) {
+    double ecef_x, ecef_y, ecef_z, ned_x, ned_y, ned_z;
+    int32_t latitude, longitude;
+    auto alt =
+        (msg.alt / (double)1e3) -
+        GeographicLib::Geoid::ELLIPSOIDTOGEOID * (*egm96_5)(msg.lat, msg.lon);
+
+    earth.Forward(msg.lat / 1e7, msg.lon / 1e7, alt, ecef_x, ecef_y, ecef_z);
+
+    if (home_set) {
+
+      localNED.Forward(msg.lat / 1e7, msg.lon / 1e7, (msg.alt / (double)1e3),
+                       ned_x, ned_y, ned_z);
+      Log->Info("lat,lon,alt: {} : {} : {} ---- NED x,y,z {} : {} : {}",
+                msg.lat, msg.lon, msg.alt, ned_x, ned_y, ned_z);
+
+      latitude = msg.lat;
+      longitude = msg.lon;
+
+      //      currentHROVMessage_mutex.lock();
+      //      currentHROVMessageV2->SetX(ned_x);
+      //      currentHROVMessageV2->SetY(ned_y);
+      //      currentHROVMessage_updated = true;
+      //      currentHROVMessage_mutex.unlock();
+      //      currentHROVMessage_cond.notify_one();
+    }
+
+    //        Log->Info("lat,lon,alt: {} : {} : {} ---- NED x,y,z {} : {} : {}
+    //        ----
+    //        ECEF "
+    //                  "x,y,z {} : {} : {}",
+    //                  msg.lat, msg.lon, msg.alt, ned_x, ned_y, ned_z, ecef_x,
+    //                  ecef_y,
+    //                  ecef_z);
+
+    //    Log->Info("lat,lon,alt: {} : {} : {} ---- NED x,y,z {} : {} : {}",
+    //    msg.lat,
+    //              msg.lon, msg.alt, ned_x, ned_y, ned_z);
+
+  });
   try {
 
     ros::Rate rate(30); // 30 hz

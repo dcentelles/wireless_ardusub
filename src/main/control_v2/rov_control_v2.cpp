@@ -44,15 +44,15 @@ int main(int argc, char **argv) {
 
     std::string modeName = "";
     switch (order->GetFlyMode()) {
-    case FLY_MODE::DEPTH_HOLD:
+    case ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD:
       modeName = "DEPTH HOLD";
       control->SetDepthHoldMode();
       break;
-    case FLY_MODE::STABILIZE:
+    case ARDUSUB_NAV_MODE::NAV_STABILIZE:
       modeName = "STABILIZE";
       control->SetStabilizeMode();
       break;
-    case FLY_MODE::MANUAL:
+    case ARDUSUB_NAV_MODE::NAV_MANUAL:
       modeName = "MANUAL";
       control->SetManualMode();
       break;

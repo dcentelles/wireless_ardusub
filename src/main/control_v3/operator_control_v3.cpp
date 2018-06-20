@@ -190,6 +190,8 @@ void OperatorController::StartWorkers() {
       auto ready = _currentHROVMessage->Ready();
       state.roll = _currentHROVMessage->GetRoll();
       state.pitch = _currentHROVMessage->GetPitch();
+      state.x = _currentHROVMessage->GetX();
+      state.y = _currentHROVMessage->GetY();
       state.altitude = _currentHROVMessage->GetZ();
       state.heading = _currentHROVMessage->GetHeading();
       state.keepingHeading = _currentHROVMessage->KeepingHeadingFlag();
@@ -251,6 +253,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
   _initLT = false;
   _initRT = false;
   SetLogName("TeleopJoy");
+  SetAsyncMode(true);
   Log->info("Sender initialized");
 
   _encodedImgMsg.img.reserve(telerobotics::MAX_IMG_SIZE);
@@ -269,7 +272,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
   _node = CreateObject<Operator>();
   _node->SetLogLevel(LogLevel::info);
 
-      if (params.log2File) {
+  if (params.log2File) {
     _node->LogToFile("op_v3_comms_node");
   }
 
@@ -417,21 +420,21 @@ void OperatorController::JoyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
 
   // mode switching
   if (RisingEdge(joy, _config.stabilize_button)) {
-    _teleopOrder->SetFlyMode(FLY_MODE::STABILIZE);
+    _teleopOrder->SetFlyMode(ARDUSUB_NAV_MODE::NAV_STABILIZE);
   } else if (RisingEdge(joy, _config.alt_hold_button)) {
-    _teleopOrder->SetFlyMode(FLY_MODE::DEPTH_HOLD);
+    _teleopOrder->SetFlyMode(ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD);
   } else if (RisingEdge(joy, 0)) {
-    _teleopOrder->SetFlyMode(FLY_MODE::MANUAL);
+    _teleopOrder->SetFlyMode(ARDUSUB_NAV_MODE::NAV_MANUAL);
   }
   std::string modeName = "";
   switch (_teleopOrder->GetFlyMode()) {
-  case FLY_MODE::DEPTH_HOLD:
+  case ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD:
     modeName = "DEPTH HOLD";
     break;
-  case FLY_MODE::STABILIZE:
+  case ARDUSUB_NAV_MODE::NAV_STABILIZE:
     modeName = "STABILIZE";
     break;
-  case FLY_MODE::MANUAL:
+  case ARDUSUB_NAV_MODE::NAV_MANUAL:
     modeName = "MANUAL";
     break;
   default:
@@ -523,7 +526,7 @@ void OperatorController::ActionWorker(
                                                  5);
     break;
   }
-  case 2: // UPDATE IMAGE SETTINGS
+  case 2: { // UPDATE IMAGE SETTINGS
     Log->info("Update image Settings order received");
     auto nbytes = GetImageSizeFromNumberOfPackets(goal->image_config.size);
     _settings->SetSettings(goal->image_config.roi_x0, goal->image_config.roi_y0,
@@ -532,6 +535,14 @@ void OperatorController::ActionWorker(
     _settings->EncodeMonoVersion(goal->image_config.encode_mono);
     _currentOperatorMessage->SetUpdateImageSettingsOrder(_settings);
     break;
+  }
+  case 5: { // GOTO START
+    Log->info("Go to request received");
+    _currentHROVMessage->SetNavMode(ARDUSUB_NAV_MODE::NAV_GUIDED);
+    _currentOperatorMessage->SetGoToOrder(goal->x * 100, goal->y * 100,
+                                          goal->depth * 100, 0);
+    break;
+  }
   }
 
   _currentOperatorMessage_mutex.unlock();

@@ -179,21 +179,21 @@ void Teleop::joyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
 
   // mode switching
   if (risingEdge(joy, config.stabilize_button)) {
-    order->SetFlyMode(FLY_MODE::STABILIZE);
+    order->SetFlyMode(ARDUSUB_NAV_MODE::NAV_STABILIZE);
   } else if (risingEdge(joy, config.alt_hold_button)) {
-    order->SetFlyMode(FLY_MODE::DEPTH_HOLD);
+    order->SetFlyMode(ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD);
   } else if (risingEdge(joy, 0)) {
-    order->SetFlyMode(FLY_MODE::MANUAL);
+    order->SetFlyMode(ARDUSUB_NAV_MODE::NAV_MANUAL);
   }
   std::string modeName = "";
   switch (order->GetFlyMode()) {
-  case FLY_MODE::DEPTH_HOLD:
+  case ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD:
     modeName = "DEPTH HOLD";
     break;
-  case FLY_MODE::STABILIZE:
+  case ARDUSUB_NAV_MODE::NAV_STABILIZE:
     modeName = "STABILIZE";
     break;
-  case FLY_MODE::MANUAL:
+  case ARDUSUB_NAV_MODE::NAV_MANUAL:
     modeName = "MANUAL";
     break;
   default:
