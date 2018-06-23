@@ -656,7 +656,7 @@ int main(int argc, char **argv) {
     return 1;
 
   Log->SetLogLevel(cpplogging::LogLevel::info);
-  //Log->FlushLogOn(cpplogging::LogLevel::info);
+  // Log->FlushLogOn(cpplogging::LogLevel::info);
   Log->LogToConsole(params.log2Console);
 
   control->SetLogName("GCS");
@@ -677,10 +677,11 @@ int main(int argc, char **argv) {
   }
 
   if (params.serialPort != "service") {
-    Log->Info("CommsDevice type: dccomms_utils::S100Stream");
-    dccomms::Ptr<CommsDevice> stream =
-        dccomms::CreateObject<dccomms_utils::S100Stream>(
-            params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
+    Log->Info("CommsDevice type: dccomms::SerialPortStream");
+    dccomms::Ptr<SerialPortStream> stream =
+        dccomms::CreateObject<dccomms::SerialPortStream>(
+            params.serialPort, SerialPortStream::BAUD_9600);
+    stream->SetHwFlowControl(true);
     stream->Open();
     commsNode->SetComms(stream);
   } else {

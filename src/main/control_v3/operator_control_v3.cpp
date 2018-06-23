@@ -290,10 +290,13 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
   }
 
   if (params.serialPort != "service") {
-    auto s100Stream = CreateObject<dccomms_utils::S100Stream>(
-        params.serialPort, SerialPortStream::BAUD_2400, S100_MAX_BITRATE);
-    s100Stream->Open();
-    _node->SetComms(s100Stream);
+    Info("CommsDevice type: dccomms::SerialPortStream");
+    dccomms::Ptr<SerialPortStream> stream =
+        dccomms::CreateObject<dccomms::SerialPortStream>(
+            params.serialPort, SerialPortStream::BAUD_9600);
+    stream->SetHwFlowControl(true);
+    stream->Open();
+    _node->SetComms(stream);
   } else {
     Info("CommsDevice type: dccomms::CommsDeviceService");
 
