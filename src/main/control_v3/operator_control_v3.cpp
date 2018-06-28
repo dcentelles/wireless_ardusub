@@ -315,16 +315,16 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
   }
 
   _node->SetImageReceivedCallback([this](Operator &op) {
-    Log->info("New Image received!");
     int encodedImgSize;
     encodedImgSize = op.GetLastReceivedImage(_imgBuffer);
+    Log->info("RX IMG {}", encodedImgSize);
     _encodedImgMsg.img.resize(encodedImgSize);
     memcpy(_encodedImgMsg.img.data(), _imgBuffer, encodedImgSize);
     _encodedImage_pub.publish(_encodedImgMsg);
   });
 
   _node->SetStateReceivedCallback([this](Operator &op) {
-    Log->info("New state received!");
+    Log->info("RX ST");
     _currentHROVMessage_mutex.lock();
     _node->GetLastConfirmedState(_currentHROVMessage->GetBuffer());
     _currentHROVMessage_mutex.unlock();

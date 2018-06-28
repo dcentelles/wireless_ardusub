@@ -495,7 +495,7 @@ void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
     lastImageSize =
         emsg.max_size <= msg->img.size() ? emsg.max_size : msg->img.size();
     if (lastImageSize > 0) {
-      Log->Info("Sending the new captured image... ({} bytes)", lastImageSize);
+      Log->Info("TX IMG {}", lastImageSize);
       commsNode->SendImage((void *)msg->img.data(), lastImageSize);
     }
   } else {
@@ -671,8 +671,8 @@ int main(int argc, char **argv) {
   commsNode->SetImageTrunkLength(DEFAULT_IMG_TRUNK_LENGTH);
 
   if (params.log2File) {
-    Log->LogToFile("rov_v3_main");
-    control->LogToFile("rov_v3_control");
+    Log->LogToFile("rov_v3_control");
+    control->LogToFile("rov_v3_gcs");
     commsNode->LogToFile("rov_v3_comms_node");
   }
 
