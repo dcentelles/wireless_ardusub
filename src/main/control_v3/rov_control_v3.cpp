@@ -17,6 +17,9 @@
 #include <wireless_ardusub/Constants.h>
 #include <wireless_ardusub/utils.hpp>
 
+#include <mavros/frame_tf.h>
+#include <tf_conversions/tf_eigen.h>
+
 using namespace cpplogging;
 using namespace std::chrono_literals;
 using namespace telerobotics;
@@ -36,7 +39,7 @@ struct HROVPose {
 static LoggerPtr Log;
 static Params params;
 
-static uint16_t localPort = 14550;
+static uint16_t localPort = 14552;
 static dccomms::Ptr<GCSv1> control = dccomms::CreateObject<GCSv1>(localPort);
 
 static dccomms::Ptr<OperatorMessageV2> currentOperatorMessage =
@@ -63,6 +66,7 @@ static std::thread holdChannelWorker;
 
 static ros::Subscriber encodedImage_sub;
 static ros::Publisher encodingConfig_pub;
+static ros::Publisher setenupos_pub;
 static dccomms::Ptr<ROV> commsNode;
 
 static image_utils_ros_msgs::EncodingConfig emsg;
@@ -361,7 +365,79 @@ void handleNewOrder() {
         break;
       }
       case OperatorMessageV2::OrderType::GoTo: {
-        // auto goTo = currentOperatorMessage->GetGoToOrder();
+        int x, y, z, heading;
+
+        currentOperatorMessage->GetGoToOrder(x, y, z, heading);
+        // We received NED coordinates.
+        // see
+        // https://github.com/mavlink/mavros/blob/de9f39a719b091b8448214a17d27b3b1c415d0dc/mavros/src/lib/uas_data.cpp#L55
+
+        // heading: 0-360
+        heading -= 360;
+        double yaw = heading * M_PI / 180.;
+
+        tf::Quaternion ned_orientation;
+        ned_orientation.setRPY(0, 0, yaw);
+        tf::Vector3 ned_position(x / 100., y / 100., z / 100.);
+        tf::StampedTransform ned_tf;
+        ned_tf.setOrigin(ned_position);
+        ned_tf.setRotation(ned_orientation.normalize());
+
+        // Transform to ENU coordinates
+
+        // //Manually:
+        //         tf::Quaternion enu2ned_rot;
+        //         enu2ned_rot.setRPY(M_PI, 0, M_PI_2); // yaw, pitch, roll
+        //         tf::Quaternion ned2enu_rot = enu2ned_rot.inverse();
+        //         tf::StampedTransform ned2enu_tf;
+        //         ned2enu_tf.setOrigin(tf::Vector3(0, 0, 0));
+        //         ned2enu_tf.setRotation(ned2enu_rot);
+
+        //         tf::Transform enu_tf = ned2enu_tf * ned_tf;
+        //         auto trans = enu_tf.getOrigin();
+        //         tf::Quaternion enurot = enu_tf.getRotation();
+
+        //         Log->Info("ENU: x: {} ; y: {} ; z: {} ; yaw: {}", trans.x(),
+        //         trans.y(),
+        //                   trans.z(), tf::getYaw(enurot));
+
+        // Using mavros utils
+        Eigen::Affine3d tr;
+        tf::transformTFToEigen(ned_tf, tr);
+
+        Eigen::Vector3d pos = mavros::ftf::transform_frame_ned_enu(
+            Eigen::Vector3d(tr.translation()));
+        Eigen::Quaterniond rotation =
+            mavros::ftf::transform_orientation_ned_enu(
+                Eigen::Quaterniond(tr.rotation()));
+        tf::Quaternion tfrot;
+        tf::quaternionEigenToTF(rotation, tfrot);
+        yaw = tf::getYaw(tfrot);
+
+        Log->Info("Go to ENU: x: {} ; y: {} ; z: {} ; yaw: {}", pos.x(),
+                  pos.y(), pos.z(), yaw);
+
+        //         //
+        //         ftf::transform_orientation_baselink_aircraft(Eigen::Quaterniond(tr.rotation())));
+
+        //        //            yaw =
+        //        // tf::getYaw(current_origin_target_tf.getRotation());
+
+        //        //            double degs = yaw * (180 / M_PI);
+        //        //            if(degs < 0) degs = 360 + degs;
+        //        //            qDebug() << "yaw: " << yaw << " degs: " << degs;
+        //        //            emit desiredPositionUpdated(x, y, z, degs);
+
+        //        // MAVROS reads ENU coordinates so transform from NED to ENU
+        //        first.
+
+        geometry_msgs::PoseStamped msg;
+        msg.pose.position.x = pos.x();
+        msg.pose.position.y = pos.y();
+        msg.pose.position.z = pos.z();
+        tf::quaternionEigenToMsg(rotation, msg.pose.orientation);
+        msg.header.frame_id = "local_origin";
+        setenupos_pub.publish(msg);
         break;
       }
       }
@@ -508,14 +584,14 @@ void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
 void handleNewHUDData(const mavlink_vfr_hud_t &msg) {
   currentHROVMessage_mutex.lock();
   currentHROVMessageV2->SetHeading(msg.heading);
-  currentHROVMessageV2->SetZ(msg.alt * 100);
+  // currentHROVMessageV2->SetZ(-1 * msg.alt * 100);
   currentHROVMessage_updated = true;
   currentHROVMessage_mutex.unlock();
   currentHROVMessage_cond.notify_one();
 
   currentHROVPose_mutex.lock();
   currentHROVPose.heading = msg.heading;
-  currentHROVPose.Z = msg.alt;
+  // currentHROVPose.Z = msg.alt;
   currentHROVPose_updated = true;
   currentHROVPose_mutex.unlock();
   currentHROVPose_cond.notify_one();
@@ -527,7 +603,7 @@ void handleNewNavigationData(const mavlink_attitude_t &attitude) {
   pitch = attitude.pitch;
   roll = attitude.roll;
 
-  Log->Debug("yaw: {} ; pitch: {} ; roll: {}", yaw, pitch, roll);
+  Log->Info("yaw: {} ; pitch: {} ; roll: {}", yaw, pitch, roll);
   int rx, ry, rz;
   rx = telerobotics::utils::GetDiscreteYaw(roll);
   ry = telerobotics::utils::GetDiscreteYaw(pitch);
@@ -591,6 +667,9 @@ void initROSInterface(int argc, char **argv) {
   encodingConfig_pub =
       nh.advertise<image_utils_ros_msgs::EncodingConfig>("encoding_config", 1);
 
+  setenupos_pub = nh.advertise<geometry_msgs::PoseStamped>(
+      "/mavros/setpoint_position/local", 1);
+
   control->SetVfrHudCb(handleNewHUDData);
   control->SetAttitudeCb(handleNewNavigationData);
   control->SetHeartbeatCb(handleNewArdusubState);
@@ -645,7 +724,7 @@ int getParams() {
   return 0;
 }
 int main(int argc, char **argv) {
-  Log = CreateLogger("TeleopROV");
+  Log = CreateLogger("ROVMain");
   Log->Info("Init");
   Log->SetAsyncMode(true);
 
@@ -660,15 +739,18 @@ int main(int argc, char **argv) {
   Log->LogToConsole(params.log2Console);
 
   control->SetLogName("GCS");
+  control->SetAsyncMode();
   control->SetLogLevel(info);
   control->Arm(false);
   control->LogToConsole(params.log2Console);
   control->Start();
 
+  initROSInterface(argc, argv);
   startWorkers();
   commsNode = dccomms::CreateObject<ROV>();
 
   commsNode->SetImageTrunkLength(DEFAULT_IMG_TRUNK_LENGTH);
+  commsNode->SetAsyncMode();
 
   if (params.log2File) {
     Log->LogToFile("rov_v3_control");
@@ -757,6 +839,7 @@ int main(int argc, char **argv) {
     currentHROVMessage_mutex.lock();
     currentHROVMessageV2->SetX(msg.x * 100);
     currentHROVMessageV2->SetY(msg.y * 100);
+    currentHROVMessageV2->SetZ(msg.z * 100);
     currentHROVMessage_updated = true;
     currentHROVMessage_mutex.unlock();
     currentHROVMessage_cond.notify_one();
@@ -806,7 +889,6 @@ int main(int argc, char **argv) {
   try {
 
     ros::Rate rate(30); // 30 hz
-    initROSInterface(argc, argv);
 
     while (ros::ok()) {
       ros::spinOnce();

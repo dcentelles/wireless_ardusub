@@ -25,6 +25,7 @@ find_package(catkin REQUIRED COMPONENTS
   dynamic_reconfigure
   image_utils_ros_msgs
   mavros
+  tf_conversions
 )
 
 #find_package(catkin REQUIRED dynamic_reconfigure)
@@ -187,6 +188,7 @@ catkin_package(
     image_utils_ros_msgs
     sensor_msgs
     sensor_msgs
+    tf_conversions
 )
 
 roslaunch_add_file_check(launch)

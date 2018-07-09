@@ -13,6 +13,7 @@
 #include <dccomms_packets/VariableLengthPacket.h>
 #include <dccomms_utils/S100Stream.h>
 #include <dynamic_reconfigure/server.h>
+#include <geometry_msgs/Pose.h>
 #include <image_utils_ros_msgs/EncodedImg.h>
 #include <merbots_whrov_msgs/OrderAction.h>
 #include <merbots_whrov_msgs/state.h>
@@ -21,6 +22,8 @@
 #include <telerobotics/HROVMessageV2.h>
 #include <telerobotics/Operator.h>
 #include <telerobotics/OperatorMessageV2.h>
+#include <tf/transform_broadcaster.h>
+#include <tf/transform_listener.h>
 #include <vector>
 #include <wireless_ardusub/Constants.h>
 #include <wireless_ardusub/wireless_teleop_joyConfig.h>
@@ -144,6 +147,7 @@ private:
   ros::NodeHandle &_nh;
   ros::Publisher _currentHROVState_pub;
   ros::Publisher _encodedImage_pub;
+  ros::Publisher _pose_pub;
   dynamic_reconfigure::Server<wireless_ardusub::wireless_teleop_joyConfig>
       _server;
   wireless_ardusub::wireless_teleop_joyConfig _config;
@@ -157,7 +161,16 @@ private:
   image_utils_ros_msgs::EncodedImg _encodedImgMsg;
   uint8_t _imgBuffer[telerobotics::MAX_IMG_SIZE];
 
-  std::thread _hrovMsgParserWorker, _msgSenderWorker, _teleopOrderWorker;
+  tf::StampedTransform _ned_tf;
+  std::mutex _ned_tf_mutex;
+  std::condition_variable _ned_tf_cond;
+  tf::TransformBroadcaster _ned_broadcaster;
+  tf::TransformListener _pose_listener;
+
+  std::thread _hrovMsgParserWorker, _msgSenderWorker, _teleopOrderWorker,
+      _posePublisher;
+
+  bool _world_ned_set = false;
 
   // FUNCTIONS
   bool RisingEdge(const sensor_msgs::Joy::ConstPtr &joy, int index);
@@ -180,6 +193,7 @@ private:
 
 void OperatorController::StartWorkers() {
   _hrovMsgParserWorker = std::thread([this]() {
+
     while (1) {
       std::unique_lock<std::mutex> lock(_currentHROVMessage_mutex);
       while (!_currentHROVMessage_updated) {
@@ -201,13 +215,33 @@ void OperatorController::StartWorkers() {
       state.armed = _currentHROVMessage->Armed();
       _currentHROVMessage_updated = false;
       lock.unlock();
-      Info("CONFIRMED STATE - OID: {} ; CC: {} ; RDY: {} ; HD: {} ; NAV: {} ; "
-           "ARMED: {} ; x:y:z: "
-           "{} : {} : {}",
-           oid, cancelled ? 1 : 0, ready ? 1 : 0, state.heading, state.navMode,
-           state.armed ? 1 : 0, state.x, state.y, state.altitude);
 
       _currentHROVState_pub.publish(state);
+
+      tf::Vector3 position(state.x / 100., state.y / 100.,
+                           state.altitude / 100.);
+
+      // heading: 0-360
+
+      double yaw = state.heading;
+      yaw -= 360;
+      yaw = yaw * M_PI / 180.;
+
+      Info("CONFIRMED STATE - OID: {} ; CC: {} ; RDY: {} ; HD: {} ({}); NAV: "
+           "{} ; "
+           "ARMED: {} ; x:y:z: "
+           "{} : {} : {}",
+           oid, cancelled ? 1 : 0, ready ? 1 : 0, state.heading, yaw,
+           state.navMode, state.armed ? 1 : 0, state.x, state.y,
+           state.altitude);
+
+      tf::Quaternion orientation = tf::createQuaternionFromYaw(yaw);
+      _ned_tf_mutex.lock();
+      _ned_tf.setOrigin(position);
+      _ned_tf.setRotation(orientation);
+      _ned_tf_cond.notify_one();
+      _ned_tf_mutex.unlock();
+
       NotifyNewHROVState(ready, oid, cancelled);
     }
   });
@@ -244,6 +278,41 @@ void OperatorController::StartWorkers() {
       _currentOperatorMessage_cond.notify_one();
     }
   });
+
+  _posePublisher = std::thread([this]() {
+    tf::StampedTransform world_ned_tf;
+    while (1) {
+      if (_world_ned_set) {
+        std::this_thread::sleep_for(chrono::milliseconds(20));
+        std::unique_lock<std::mutex> lock(_ned_tf_mutex);
+        _ned_tf_cond.wait(lock);
+
+        tf::Transform wMv = world_ned_tf * _ned_tf;
+        tf::Vector3 position = wMv.getOrigin();
+        tf::Quaternion orientation = wMv.getRotation();
+        geometry_msgs::Pose msg;
+        msg.position.x = position.x();
+        msg.position.y = position.y();
+        msg.position.z = position.z();
+        msg.orientation.x = orientation.x();
+        msg.orientation.y = orientation.y();
+        msg.orientation.z = orientation.z();
+        msg.orientation.w = orientation.w();
+        _pose_pub.publish(msg);
+      } else {
+        try {
+          _pose_listener.waitForTransform("world", "local_origin_ned",
+                                          ros::Time(0), ros::Duration(1));
+          _pose_listener.lookupTransform("world", "local_origin_ned",
+                                         ros::Time(0), world_ned_tf);
+          _world_ned_set = true;
+        } catch (tf::TransformException &e) {
+          ROS_ERROR("Not able to lookup transform: %s", e.what());
+          _world_ned_set = false;
+        };
+      }
+    }
+  });
 }
 
 OperatorController::OperatorController(ros::NodeHandle &nh)
@@ -276,6 +345,8 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
 
   _encodedImage_pub =
       _nh.advertise<image_utils_ros_msgs::EncodedImg>("encoded_image", 1);
+
+  _pose_pub = _nh.advertise<geometry_msgs::Pose>("/bluerov2/pose", 1);
 
   _currentOperatorMessage = OperatorMessageV2::Build();
   _currentHROVMessage = HROVMessageV2::BuildHROVMessageV2();
@@ -467,9 +538,10 @@ void OperatorController::JoyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
     break;
   }
 
-  Info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
-       _teleopOrder->GetX(), _teleopOrder->GetY(), _teleopOrder->GetZ(),
-       _teleopOrder->GetR(), _teleopOrder->Arm() ? "true" : "false", modeName);
+  //  Info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
+  //       _teleopOrder->GetX(), _teleopOrder->GetY(), _teleopOrder->GetZ(),
+  //       _teleopOrder->GetR(), _teleopOrder->Arm() ? "true" : "false",
+  //       modeName);
   _teleopOrder_mutex.unlock();
 
   // remember current button states for future comparison
@@ -687,6 +759,7 @@ int main(int argc, char **argv) {
   Log = CreateLogger("operator_control_v3:main");
   Log->SetLogLevel(LogLevel::info);
   Log->Info("Init");
+  Log->SetAsyncMode();
   getParams();
 
   Log->LogToConsole(params.log2Console);
@@ -694,6 +767,7 @@ int main(int argc, char **argv) {
   OperatorController teleop(nh);
   teleop.LogToConsole(params.log2Console);
   teleop.SetLogLevel(LogLevel::info);
+  teleop.SetAsyncMode();
   if (params.log2File) {
     Log->LogToFile("op_v3_main");
     teleop.LogToFile("op_v3_control");
