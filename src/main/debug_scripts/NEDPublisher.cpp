@@ -6,8 +6,12 @@
 #include <geometry_msgs/Pose.h>
 #include <mavlink_cpp/GCSv1.h>
 #include <ros/publisher.h>
+#include <ros/publisher.h>
+#include <ros/ros.h>
 #include <ros/ros.h>
 #include <tf/transform_broadcaster.h>
+#include <tf/transform_broadcaster.h>
+#include <tf/transform_listener.h>
 #include <tf/transform_listener.h>
 #include <thread>
 
@@ -29,14 +33,51 @@ int main(int argc, char **argv) {
   control->SetLogLevel(debug);
   control->FlushLogOn(debug);
 
+  tf::Matrix3x3 rotMat;
+  tfScalar yaw;
+  tfScalar pitch;
+  tfScalar roll;
+
+  std::mutex rotlock;
   control->SetAttitudeCb([&](const mavlink_attitude_t &attitude) {
-    tf::Matrix3x3 rotMat;
-    tfScalar yaw = attitude.yaw;
-    tfScalar pitch = attitude.pitch;
-    tfScalar roll = attitude.roll;
+    yaw = attitude.yaw;
+    pitch = attitude.pitch;
+    roll = attitude.roll;
+    rotlock.lock();
     rotMat.setRPY(roll, pitch, yaw);
     rotMat.inverse().getRPY(roll, pitch, yaw);
-    log->Info("(inverse) R: {:9f} ; P: {:9f} ; Y: {:9f}", roll, pitch, yaw);
+    rotlock.unlock();
+    // log->Info("(inverse) R: {:9f} ; P: {:9f} ; Y: {:9f}", roll, pitch, yaw);
+  });
+
+  ros::Publisher bluerov2Pub;
+  bluerov2Pub = nh.advertise<geometry_msgs::Pose>("/bluerov2/pose", 1);
+
+  control->SetLocalPositionNEDCb([&](const mavlink_local_position_ned_t &msg) {
+    log->Debug("LOCAL_POSITION_NED:"
+               "\ttime_boot_ms: {}\n"
+               "\tx: {}\n"
+               "\ty: {}\n"
+               "\tz: {}\n"
+               "\tvx: {}\n"
+               "\tvy: {}\n"
+               "\tvz: {}\n",
+               msg.time_boot_ms, msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz);
+
+    geometry_msgs::Pose bluerov2msg;
+    bluerov2msg.position.x = msg.x;
+    bluerov2msg.position.y = msg.x;
+    bluerov2msg.position.z = msg.x;
+    tf::Quaternion q;
+    rotlock.lock();
+    rotMat.getRotation(q);
+    bluerov2msg.orientation.x = q.x();
+    bluerov2msg.orientation.y = q.y();
+    bluerov2msg.orientation.z = q.z();
+    bluerov2msg.orientation.w = q.w();
+    rotlock.unlock();
+    bluerov2Pub.publish(bluerov2msg);
+
   });
 
   control->EnableGPSMock(true);

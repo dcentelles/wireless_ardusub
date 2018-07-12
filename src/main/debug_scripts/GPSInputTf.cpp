@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
   log->SetLogLevel(info);
   log->FlushLogOn(debug);
   // ros::Publisher fake_gps_pub;
-  uint16_t localPort = 14551;
+  uint16_t localPort = 14550;
   std::shared_ptr<GCSv1> control(new GCSv1(localPort));
 
   ros::init(argc, argv, "simple_bluerov2_publisher");
@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
   bluerov2Pub = nh.advertise<geometry_msgs::Pose>("/bluerov2/pose", 1);
 
   control->SetLogName("GCS");
-  control->SetLogLevel(off);
+  control->SetLogLevel(info);
   control->FlushLogOn(debug);
 
   control->EnableGPSMock(false);
@@ -42,9 +42,9 @@ int main(int argc, char **argv) {
   tf::TransformListener listener;
 
   ///// GPS VISION
-  double origin_lat = 0, origin_lon = 0, origin_alt = 0;
+  double origin_lat = 39.993428, origin_lon = -0.068574, origin_alt = 0;
+  //double origin_lat = 0, origin_lon = 0, origin_alt = 0;
   Eigen::Vector3d map_origin; //!< geodetic origin [lla]
-  Eigen::Vector3d ned_origin; //!< geocentric origin [m]
   map_origin = {origin_lat, origin_lon, origin_alt};
   /**
    * @brief Conversion of the origin from geodetic coordinates (LLA)
@@ -56,9 +56,6 @@ int main(int argc, char **argv) {
 
   GeographicLib::LocalCartesian localNED(map_origin.x(), map_origin.y(),
                                          map_origin.z(), earth);
-
-  localNED.Forward(map_origin.x(), map_origin.y(), map_origin.z(),
-                   ned_origin.x(), ned_origin.y(), ned_origin.z());
 
   std::shared_ptr<GeographicLib::Geoid> egm96_5;
   egm96_5 = std::make_shared<GeographicLib::Geoid>("egm96-5", "", true, true);
@@ -72,6 +69,17 @@ int main(int argc, char **argv) {
   tfScalar pitch;
   tfScalar roll;
   bool gps_mock = false;
+
+  std::thread setHomeWorker([&]() {
+    while (1) {
+     control->SetHome(origin_lat, origin_lon, origin_alt);
+      std::this_thread::sleep_for(std::chrono::seconds(4));
+    }
+  });
+  control->SetHomeUpdatedCb([&](const mavlink_home_position_t &msg) {
+
+
+  });
 
   control->SetLocalPositionNEDCb([&](const mavlink_local_position_ned_t &msg) {
     log->Debug("LOCAL_POSITION_NED:"
@@ -97,13 +105,6 @@ int main(int argc, char **argv) {
     ned_mutex.lock();
     localNED.Forward(msg.lat / 1e7, msg.lon / 1e7, (msg.alt / (double)1e3),
                      ned_x, ned_y, ned_z);
-
-    //    log->Info("lat,lon,alt: {} : {} : {} ---- NED x,y,z {} : {} : {} ----
-    //    ECEF "
-    //              "x,y,z {} : {} : {}",
-    //              msg.lat, msg.lon, msg.alt, ned_x, ned_y, ned_z, ecef_x,
-    //              ecef_y,
-    //              ecef_z);
     latitude = msg.lat;
     longitude = msg.lon;
 
@@ -117,15 +118,7 @@ int main(int argc, char **argv) {
     pitch = attitude.pitch;
     roll = attitude.roll;
     attitude_mutex.unlock();
-    //    tf::Quaternion quat =
-    //        tf::createQuaternionFromRPY(roll, pitch, yaw).inverse();
-
-    //    log->Info("{} : {} : {} : {}", quat.getX(), quat.getY(), quat.getZ(),
-    //              quat.getW());
-    // tfScalar iroll, ipitch, iyaw;
-    //    quat.getW());
     log->Info("R: {:9f} ; P: {:9f} ; Y: {:9f}", roll, pitch, yaw);
-    // log->Info("R: {:9f} ; P: {:9f} ; Y: {:9f}", iroll, ipitch, iyaw);
   });
 
   std::thread GPSInput([&]() {
@@ -134,15 +127,16 @@ int main(int argc, char **argv) {
       mavlink_gps_input_t gpsinput;
       try {
         auto now = ros::Time::now();
-        listener.waitForTransform("ned_origin", "rov", now, ros::Duration(1.0));
-        listener.lookupTransform("ned_origin", "rov", ros::Time(0),
+        listener.waitForTransform("local_origin_ned", "rov", now,
+                                  ros::Duration(1.0));
+        listener.lookupTransform("local_origin_ned", "rov", ros::Time(0),
                                  ned_origin_rov_tf);
 
       } catch (tf::TransformException ex) {
         ROS_ERROR("%s", ex.what());
         log->Warn("GPS lost. Sending last filtered position...");
         ros::Duration(1.0).sleep();
-        gpsinput.lat = latitude; // [degrees * 1e7]
+        gpsinput.lat = latitude;  // [degrees * 1e7]
         gpsinput.lon = longitude; // [degrees * 1e7]
       }
 
@@ -150,9 +144,7 @@ int main(int argc, char **argv) {
       position = ned_origin_rov_tf.getOrigin();
 
       Eigen::Vector3d geodetic;
-      Eigen::Vector3d current_ned(ned_origin.x() + position.x(),
-                                  ned_origin.y() + position.y(),
-                                  ned_origin.z() + position.z());
+      Eigen::Vector3d current_ned(position.x(), position.y(), position.z());
 
       try {
         localNED.Reverse(current_ned.x(), current_ned.y(), current_ned.z(),
@@ -181,7 +173,7 @@ int main(int argc, char **argv) {
       gpsinput.ignore_flags = IGNORE_VELOCITIES_AND_ACCURACY;
       control->SendGPSInput(gpsinput);
 
-      // log->Info("Lat: {} ; Lon: {}", gpsinput.lat, gpsinput.lon);
+      log->Info("Lat: {} ; Lon: {}", gpsinput.lat, gpsinput.lon);
       std::this_thread::sleep_for(std::chrono::milliseconds(250));
     }
   });
@@ -193,15 +185,15 @@ int main(int argc, char **argv) {
   tf::StampedTransform camera_rov_tf;
 
   while (ros::ok()) {
-    tf::Quaternion q_rot, q_new;
-    double r = -1.57079632648966, p = -1.57079632648966,
-           y = 0; // Rotate the previous pose by 180* about X
-    q_rot = tf::createQuaternionFromRPY(r, p, y);
-    q_new = q_rot;
-    camera_rov_tf.setOrigin(tf::Vector3(0, 0, 0));
-    camera_rov_tf.setRotation(q_new);
-    rovVisionPositionBroadcaster.sendTransform(
-        tf::StampedTransform(camera_rov_tf, ros::Time::now(), "camera", "rov"));
+//    tf::Quaternion q_rot, q_new;
+//    double r = -1.57079632648966, p = -1.57079632648966,
+//           y = 0; // Rotate the previous pose by 180* about X
+//    q_rot = tf::createQuaternionFromRPY(r, p, y);
+//    q_new = q_rot;
+//    camera_rov_tf.setOrigin(tf::Vector3(0, 0, 0));
+//    camera_rov_tf.setRotation(q_new);
+//    rovVisionPositionBroadcaster.sendTransform(
+//        tf::StampedTransform(camera_rov_tf, ros::Time::now(), "camera", "rov"));
 
     attitude_mutex.lock();
     tfScalar last_roll = roll, last_pitch = pitch, last_yaw = yaw;
@@ -212,14 +204,18 @@ int main(int argc, char **argv) {
     ned_mutex.unlock();
 
     tf::Quaternion attitude =
-        tf::createQuaternionFromRPY(0, 0, last_yaw)
-            .normalize();
+        tf::createQuaternionFromRPY(0, 0, last_yaw).normalize();
+
+    double heading = yaw * (180. / M_PI);
+    if (heading < 0)
+      heading = heading + 360;
+    log->Info("Heading: {}", heading);
 
     ned_origin_ekfrov_tf.setOrigin(tf::Vector3(last_x, last_y, last_z));
     ned_origin_ekfrov_tf.setRotation(attitude);
 
     ekfBroadcaster.sendTransform(tf::StampedTransform(
-        ned_origin_ekfrov_tf, ros::Time::now(), "ned_origin", "ekfrov"));
+        ned_origin_ekfrov_tf, ros::Time::now(), "local_origin_ned", "ekfrov"));
 
     ros::spinOnce();
     rate.sleep();

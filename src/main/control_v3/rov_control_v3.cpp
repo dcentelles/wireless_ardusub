@@ -524,11 +524,12 @@ void messageSenderWork() {
     auto heading = currentHROVMessageV2->GetHeading();
     auto navMode = (int)currentHROVMessageV2->GetNavMode();
     auto armed = currentHROVMessageV2->Armed();
-    Log->Info("OWN STATE - OID: {} ; CC: {} ; RDY: {} ; HD: {} ; NAV: {} ; "
-              "ARMED: {} ; x:y:z: "
-              "{} : {} : {}",
-              oid, cancelled ? 1 : 0, ready ? 1 : 0, heading, navMode,
-              armed ? 1 : 0, x, y, altitude);
+    //    Log->Info("OWN STATE - OID: {} ; CC: {} ; RDY: {} ; HD: {} ; NAV: {} ;
+    //    "
+    //              "ARMED: {} ; x:y:z: "
+    //              "{} : {} : {}",
+    //              oid, cancelled ? 1 : 0, ready ? 1 : 0, heading, navMode,
+    //              armed ? 1 : 0, x, y, altitude);
     currentHROVMessage_updated = false;
   }
 }
@@ -663,7 +664,7 @@ void handleNewNavigationData(const mavlink_attitude_t &attitude) {
   g_roll = attitude.roll;
   attitude_mutex.unlock();
 
-  Log->Info("yaw: {} ; pitch: {} ; roll: {}", g_yaw, g_pitch, g_roll);
+  //  Log->Info("yaw: {} ; pitch: {} ; roll: {}", g_yaw, g_pitch, g_roll);
   int rx, ry, rz;
   rx = telerobotics::utils::GetDiscreteYaw(g_roll);
   ry = telerobotics::utils::GetDiscreteYaw(g_pitch);
@@ -804,7 +805,6 @@ int main(int argc, char **argv) {
   arm(false);
   control->LogToConsole(params.log2Console);
   control->EnableGPSMock(false);
-  control->Start();
 
   initROSInterface(argc, argv);
   startWorkers();
@@ -866,18 +866,22 @@ int main(int argc, char **argv) {
   commsNode->SetCurrentTxState(currentHROVMessageV2->GetBuffer(),
                                currentHROVMessageV2->GetMsgSize());
 
-  ///// GPS
+  ///// GPS VISION
   tf::TransformListener listener;
   double origin_lat = 39.993428, origin_lon = -0.068574, origin_alt = 0;
+  // double origin_lat = 0, origin_lon = 0, origin_alt = 0;
   Eigen::Vector3d map_origin; //!< geodetic origin [lla]
-
+  map_origin = {origin_lat, origin_lon, origin_alt};
+  /**
+   * @brief Conversion of the origin from geodetic coordinates (LLA)
+   * to ECEF (Earth-Centered, Earth-Fixed)
+   */
   // Constructor for a ellipsoid
   GeographicLib::Geocentric earth(GeographicLib::Constants::WGS84_a(),
                                   GeographicLib::Constants::WGS84_f());
 
-  GeographicLib::LocalCartesian localNED;
-  localNED =
-      GeographicLib::LocalCartesian(origin_lat, origin_lon, origin_alt, earth);
+  GeographicLib::LocalCartesian localNED(map_origin.x(), map_origin.y(),
+                                         map_origin.z(), earth);
 
   std::shared_ptr<GeographicLib::Geoid> egm96_5;
   egm96_5 = std::make_shared<GeographicLib::Geoid>("egm96-5", "", true, true);
@@ -886,8 +890,9 @@ int main(int argc, char **argv) {
 
     map_origin = {msg.latitude / 1e7, msg.longitude / 1e7, msg.altitude / 1e3};
 
-    localNED = GeographicLib::LocalCartesian(map_origin.x(), map_origin.y(),
-                                             map_origin.z(), earth);
+    //    localNED = GeographicLib::LocalCartesian(map_origin.x(),
+    //    map_origin.y(),
+    //                                             map_origin.z(), earth);
 
     double lat_error = map_origin.x() - origin_lat;
     double lon_error = map_origin.y() - origin_lon;
@@ -907,21 +912,27 @@ int main(int argc, char **argv) {
               "\tvy: {}\n"
               "\tvz: {}\n",
               msg.time_boot_ms, msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz);
+
+    ned_mutex.lock();
+
+//    ned_x = msg.x;
+//    ned_y = msg.y;
+    ned_z = msg.z;
+
+    ned_mutex.unlock();
     currentHROVMessage_mutex.lock();
-    currentHROVMessageV2->SetX(msg.x * 100);
-    currentHROVMessageV2->SetY(msg.y * 100);
     currentHROVMessageV2->SetZ(msg.z * 100);
     currentHROVMessage_updated = true;
     currentHROVMessage_mutex.unlock();
     currentHROVMessage_cond.notify_one();
 
-    ned_mutex.lock();
+    //    ned_mutex.lock();
 
-    ned_x = msg.x;
-    ned_y = msg.y;
-    ned_z = msg.z;
+    //    ned_x = msg.x;
+    //    ned_y = msg.y;
+    //    ned_z = msg.z;
 
-    ned_mutex.unlock();
+    //    ned_mutex.unlock();
 
   });
 
@@ -931,10 +942,31 @@ int main(int argc, char **argv) {
     longitude = msg.lon;
     gps_mutex.unlock();
 
+    ned_mutex.lock();
+
+    localNED.Forward(msg.lat / 1e7, msg.lon / 1e7, (msg.alt / (double)1e3),
+                     ned_x, ned_y, ned_z);
+    ned_mutex.unlock();
+
+    currentHROVMessage_mutex.lock();
+    currentHROVMessageV2->SetX(ned_x * 100);
+    currentHROVMessageV2->SetY(ned_y * 100);
+    // currentHROVMessageV2->SetZ(ned_z * 100);
+    currentHROVMessage_updated = true;
+    currentHROVMessage_mutex.unlock();
+    currentHROVMessage_cond.notify_one();
+
+    Log->Info("NED:"
+              "\ttime_boot_ms: {}\n"
+              "\tned_x: {}\n"
+              "\tned_y: {}\n"
+              "\tted_z: {}\n",
+              msg.time_boot_ms, ned_x, ned_y, ned_z);
+
   });
 
   std::thread setHomeWorker([&]() {
-    while (!home_set) {
+    while (true) {
       control->SetHome(origin_lat, origin_lon, origin_alt);
       std::this_thread::sleep_for(chrono::seconds(4));
     }
@@ -1001,6 +1033,8 @@ int main(int argc, char **argv) {
 
   tf::TransformBroadcaster ekfBroadcaster;
   tf::StampedTransform ned_origin_ekfrov_tf;
+
+  control->Start();
   try {
     ros::Rate rate(30); // 30 hz
 

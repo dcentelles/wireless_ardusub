@@ -3,6 +3,8 @@
 <launch>
   <arg name="rviz" default="true"/>
   <arg name="base_marker" default="aruco_marker_8"/>
+  <arg name="mavros" default="true"/>
+ 
  
   <!-- local_origin tf is the ENU origin. Mavros will public the NED frame named local_origin_ned --> 
 
@@ -10,6 +12,8 @@
    	publish_static_transform("local_origin", "local_origin_ned", Eigen::Affine3d(ftf::quaternion_from_rpy(M_PI, 0, M_PI_2)));
 	publish_static_transform("fcu", "fcu_frd", Eigen::Affine3d(ftf::quaternion_from_rpy(M_PI, 0, 0)));
   -->
+  <node unless="$(arg mavros)" pkg="tf2_ros" type="static_transform_publisher" name="enu_to_ned" required="true" output="screen" args="0 0 0 1.5707963267948966 0 3.141592653589793 local_origin local_origin_ned"/> 
+
 
   <node pkg="tf2_ros" type="static_transform_publisher" name="cuba2_world_local_origin_broadcaster" required="true" output="screen" args="0 0 -4.25 -1.578 0 0 world local_origin"/> 
 
