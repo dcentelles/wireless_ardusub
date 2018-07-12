@@ -13,6 +13,7 @@
 #include <telerobotics/HROVMessageV2.h>
 #include <telerobotics/OperatorMessageV2.h>
 #include <telerobotics/ROV.h>
+#include <tf/transform_broadcaster.h>
 #include <tf/transform_listener.h>
 #include <wireless_ardusub/Constants.h>
 #include <wireless_ardusub/utils.hpp>
@@ -39,7 +40,7 @@ struct HROVPose {
 static LoggerPtr Log;
 static Params params;
 
-static uint16_t localPort = 14552;
+static uint16_t localPort = 14550;
 static dccomms::Ptr<GCSv1> control = dccomms::CreateObject<GCSv1>(localPort);
 
 static dccomms::Ptr<OperatorMessageV2> currentOperatorMessage =
@@ -93,6 +94,12 @@ static std::mutex currentHROVPose_mutex;
 static std::condition_variable currentHROVPose_cond;
 static bool currentHROVPose_updated;
 static bool home_set;
+static bool armed;
+static int32_t latitude, longitude;
+static std::mutex gps_mutex, ned_mutex;
+static double ned_x, ned_y, ned_z;
+static std::mutex attitude_mutex;
+static tfScalar g_yaw, g_pitch, g_roll;
 
 void notifyHROVMessageUpdated() {
   currentHROVMessage_updated = true;
@@ -383,6 +390,36 @@ void handleNewOrder() {
         ned_tf.setOrigin(ned_position);
         ned_tf.setRotation(ned_orientation.normalize());
 
+        // Send mavlink message
+
+        /* Documentation start from bit 1 instead 0;
+         * Ignore velocity and accel vectors, yaw rate.
+         *
+         * In past versions on PX4 there been bug described in #273.
+         * If you got similar issue please try update firmware first.
+         */
+        const uint16_t ignore_all_except_xyz_y =
+            (1 << 11) | (7 << 6) | (7 << 3);
+
+        mavlink_set_position_target_local_ned_t sp;
+        sp.time_boot_ms = ros::Time().toNSec() / 1e6;
+        sp.coordinate_frame = MAV_FRAME_LOCAL_NED;
+        sp.type_mask = ignore_all_except_xyz_y;
+        sp.yaw = yaw;
+        sp.yaw_rate = 0;
+        sp.x = ned_position.x();
+        sp.y = ned_position.y();
+        sp.z = ned_position.z();
+        sp.vx = 0;
+        sp.vy = 0;
+        sp.vz = 0;
+        sp.afx = 0;
+        sp.afy = 0;
+        sp.afz = 0;
+
+        control->SendSetPositionTargetLocalNED(sp);
+        break;
+
         // Transform to ENU coordinates
 
         // //Manually:
@@ -401,44 +438,50 @@ void handleNewOrder() {
         //         trans.y(),
         //                   trans.z(), tf::getYaw(enurot));
 
-        // Using mavros utils
-        Eigen::Affine3d tr;
-        tf::transformTFToEigen(ned_tf, tr);
+        //        // Using mavros utils
+        //        Eigen::Affine3d tr;
+        //        tf::transformTFToEigen(ned_tf, tr);
 
-        Eigen::Vector3d pos = mavros::ftf::transform_frame_ned_enu(
-            Eigen::Vector3d(tr.translation()));
-        Eigen::Quaterniond rotation =
-            mavros::ftf::transform_orientation_ned_enu(
-                Eigen::Quaterniond(tr.rotation()));
-        tf::Quaternion tfrot;
-        tf::quaternionEigenToTF(rotation, tfrot);
-        yaw = tf::getYaw(tfrot);
+        //        Eigen::Vector3d pos = mavros::ftf::transform_frame_ned_enu(
+        //            Eigen::Vector3d(tr.translation()));
+        //        Eigen::Quaterniond rotation =
+        //            mavros::ftf::transform_orientation_ned_enu(
+        //                Eigen::Quaterniond(tr.rotation()));
+        //        tf::Quaternion tfrot;
+        //        tf::quaternionEigenToTF(rotation, tfrot);
+        //        yaw = tf::getYaw(tfrot);
 
-        Log->Info("Go to ENU: x: {} ; y: {} ; z: {} ; yaw: {}", pos.x(),
-                  pos.y(), pos.z(), yaw);
+        //        Log->Info("Go to ENU: x: {} ; y: {} ; z: {} ; yaw: {}",
+        //        pos.x(),
+        //                  pos.y(), pos.z(), yaw);
 
-        //         //
-        //         ftf::transform_orientation_baselink_aircraft(Eigen::Quaterniond(tr.rotation())));
+        //        //         //
+        //        //
+        //        ftf::transform_orientation_baselink_aircraft(Eigen::Quaterniond(tr.rotation())));
 
-        //        //            yaw =
-        //        // tf::getYaw(current_origin_target_tf.getRotation());
+        //        //        //            yaw =
+        //        //        //
+        //        tf::getYaw(current_origin_target_tf.getRotation());
 
-        //        //            double degs = yaw * (180 / M_PI);
-        //        //            if(degs < 0) degs = 360 + degs;
-        //        //            qDebug() << "yaw: " << yaw << " degs: " << degs;
-        //        //            emit desiredPositionUpdated(x, y, z, degs);
+        //        //        //            double degs = yaw * (180 / M_PI);
+        //        //        //            if(degs < 0) degs = 360 + degs;
+        //        //        //            qDebug() << "yaw: " << yaw << " degs:
+        //        " << degs;
+        //        //        //            emit desiredPositionUpdated(x, y, z,
+        //        degs);
 
-        //        // MAVROS reads ENU coordinates so transform from NED to ENU
-        //        first.
+        //        //        // MAVROS reads ENU coordinates so transform from
+        //        NED to ENU
+        //        //        first.
 
-        geometry_msgs::PoseStamped msg;
-        msg.pose.position.x = pos.x();
-        msg.pose.position.y = pos.y();
-        msg.pose.position.z = pos.z();
-        tf::quaternionEigenToMsg(rotation, msg.pose.orientation);
-        msg.header.frame_id = "local_origin";
-        setenupos_pub.publish(msg);
-        break;
+        //        geometry_msgs::PoseStamped msg;
+        //        msg.pose.position.x = pos.x();
+        //        msg.pose.position.y = pos.y();
+        //        msg.pose.position.z = pos.z();
+        //        tf::quaternionEigenToMsg(rotation, msg.pose.orientation);
+        //        msg.header.frame_id = "local_origin";
+        //        setenupos_pub.publish(msg);
+        //        break;
       }
       }
       currentHROVMessage_mutex.lock();
@@ -447,6 +490,19 @@ void handleNewOrder() {
       notifyHROVMessageUpdated();
     }
   }
+}
+
+void arm(bool v) {
+  // We avoid set control->Arm(false) because there is a bug in the ArduSub
+  // firmware
+  // that adds an offset to the NED position when rearming.
+  if (v) {
+    control->Arm(true);
+  } else {
+    stopRobot();
+    control->SetFlyMode(FLY_MODE_R::MANUAL);
+  }
+  armed = v;
 }
 void messageSenderWork() {
   while (1) {
@@ -483,8 +539,7 @@ void operatorMsgParserWork() {
     while (!currentOperatorMessage_updated) {
       currentOperatorMessage_cond.wait_for(lock, chrono::milliseconds(2200));
       if (!currentOperatorMessage_updated && !commsNode->HoldingChannel()) {
-        stopRobot();
-        control->Arm(false);
+        arm(false);
         Log->Warn(
             "Heartbeat lost. Stopping robot to avoid thruster interferences!");
       }
@@ -495,64 +550,68 @@ void operatorMsgParserWork() {
         currentOperatorMessage->GetOrderType();
     if (lastOrderType == OperatorMessageV2::OrderType::Move) {
       lastOrder = currentOperatorMessage->GetMoveOrderCopy();
+      arm(lastOrder->Arm());
+      if (armed) {
+        std::string modeName = "";
+        ARDUSUB_NAV_MODE mode = lastOrder->GetFlyMode();
+        switch (mode) {
+        case ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD:
+          modeName = "DEPTH HOLD";
+          control->SetDepthHoldMode();
+          break;
+        case ARDUSUB_NAV_MODE::NAV_STABILIZE:
+          modeName = "STABILIZE";
+          control->SetStabilizeMode();
+          break;
+        case ARDUSUB_NAV_MODE::NAV_MANUAL:
+          modeName = "MANUAL";
+          control->SetManualMode();
+          break;
+        case ARDUSUB_NAV_MODE::NAV_POS_HOLD:
+          modeName = "POS HOLD";
+          control->SetFlyMode(FLY_MODE_R::POS_HOLD);
+          break;
+        case ARDUSUB_NAV_MODE::NAV_GUIDED:
+          modeName = "GUIDED";
+          control->EnableManualControl(false);
+          control->SetFlyMode(FLY_MODE_R::GUIDED);
+          break;
+        default:
+          break;
+        }
+        if (mode != ARDUSUB_NAV_MODE::NAV_GUIDED)
+          control->EnableManualControl(true);
+        Log->Info(
+            "Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
+            lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
+            lastOrder->GetR(), lastOrder->Arm() ? "true" : "false", modeName);
+        int x = lastOrder->GetX();
+        int y = lastOrder->GetY();
+        int z = lastOrder->GetZ();
+        int r = lastOrder->GetR();
+        // order:  y = 200/256x
+        // z control: y = 200/1000x - 100
+        // x,y and r control: y = 200/2000x
 
-      std::string modeName = "";
-      switch (lastOrder->GetFlyMode()) {
-      case ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD:
-        modeName = "DEPTH HOLD";
-        control->SetDepthHoldMode();
-        break;
-      case ARDUSUB_NAV_MODE::NAV_STABILIZE:
-        modeName = "STABILIZE";
-        control->SetStabilizeMode();
-        break;
-      case ARDUSUB_NAV_MODE::NAV_MANUAL:
-        modeName = "MANUAL";
-        control->SetManualMode();
-        break;
-      case ARDUSUB_NAV_MODE::NAV_POS_HOLD:
-        modeName = "POS HOLD";
-        control->SetFlyMode(FLY_MODE_R::POS_HOLD);
-        break;
-      case ARDUSUB_NAV_MODE::NAV_GUIDED:
-        modeName = "GUIDED";
-        control->SetFlyMode(FLY_MODE_R::GUIDED);
-        break;
-      default:
-        break;
+        double xNorm = getJoyAxisNormalized(x);
+        double yNorm = getJoyAxisNormalized(y);
+        double zNorm = getJoyAxisNormalized(z);
+        double rNorm = getJoyAxisNormalized(r);
+
+        xVel = ceil(arduSubXYR(xNorm));
+        yVel = ceil(arduSubXYR(yNorm));
+        zVel = ceil(arduSubZ(zNorm));
+        if (!keepOrientation)
+          rVel = ceil(arduSubXYR(rNorm));
+
+        //      Log->Info(
+        //          "Manual control: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ;
+        //          Mode: {}",
+        //          xVel, yVel, zVel, rVel, lastOrder->Arm() ? "true" : "false",
+        //          modeName);
+
+        control->SetManualControl(xVel, yVel, zVel, rVel);
       }
-      Log->Info(
-          "Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
-          lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
-          lastOrder->GetR(), lastOrder->Arm() ? "true" : "false", modeName);
-
-      int x = lastOrder->GetX();
-      int y = lastOrder->GetY();
-      int z = lastOrder->GetZ();
-      int r = lastOrder->GetR();
-      // order:  y = 200/256x
-      // z control: y = 200/1000x - 100
-      // x,y and r control: y = 200/2000x
-
-      double xNorm = getJoyAxisNormalized(x);
-      double yNorm = getJoyAxisNormalized(y);
-      double zNorm = getJoyAxisNormalized(z);
-      double rNorm = getJoyAxisNormalized(r);
-
-      xVel = ceil(arduSubXYR(xNorm));
-      yVel = ceil(arduSubXYR(yNorm));
-      zVel = ceil(arduSubZ(zNorm));
-      if (!keepOrientation)
-        rVel = ceil(arduSubXYR(rNorm));
-
-      //      Log->Info(
-      //          "Manual control: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ;
-      //          Mode: {}",
-      //          xVel, yVel, zVel, rVel, lastOrder->Arm() ? "true" : "false",
-      //          modeName);
-
-      control->SetManualControl(xVel, yVel, zVel, rVel);
-      control->Arm(lastOrder->Arm());
     } else {
       handleNewOrder();
     }
@@ -598,16 +657,17 @@ void handleNewHUDData(const mavlink_vfr_hud_t &msg) {
 }
 
 void handleNewNavigationData(const mavlink_attitude_t &attitude) {
-  tfScalar yaw, pitch, roll;
-  yaw = attitude.yaw;
-  pitch = attitude.pitch;
-  roll = attitude.roll;
+  attitude_mutex.lock();
+  g_yaw = attitude.yaw;
+  g_pitch = attitude.pitch;
+  g_roll = attitude.roll;
+  attitude_mutex.unlock();
 
-  Log->Info("yaw: {} ; pitch: {} ; roll: {}", yaw, pitch, roll);
+  Log->Info("yaw: {} ; pitch: {} ; roll: {}", g_yaw, g_pitch, g_roll);
   int rx, ry, rz;
-  rx = telerobotics::utils::GetDiscreteYaw(roll);
-  ry = telerobotics::utils::GetDiscreteYaw(pitch);
-  rz = telerobotics::utils::GetDiscreteYaw(yaw);
+  rx = telerobotics::utils::GetDiscreteYaw(g_roll);
+  ry = telerobotics::utils::GetDiscreteYaw(g_pitch);
+  rz = telerobotics::utils::GetDiscreteYaw(g_yaw);
 
   rx = rx > 180 ? -(360 - rx) : rx;
   ry = ry > 180 ? -(360 - ry) : ry;
@@ -650,7 +710,7 @@ void handleNewArdusubState(const mavlink_heartbeat_t &msg) {
     mode = ARDUSUB_NAV_MODE::NAV_UNKNOWN;
     break;
   }
-  bool armed = msg.base_mode & MAV_MODE_FLAG_SAFETY_ARMED;
+  // bool armed = msg.base_mode & MAV_MODE_FLAG_SAFETY_ARMED;
 
   currentHROVMessage_mutex.lock();
   currentHROVMessageV2->SetNavMode(mode);
@@ -741,8 +801,9 @@ int main(int argc, char **argv) {
   control->SetLogName("GCS");
   control->SetAsyncMode();
   control->SetLogLevel(info);
-  control->Arm(false);
+  arm(false);
   control->LogToConsole(params.log2Console);
+  control->EnableGPSMock(false);
   control->Start();
 
   initROSInterface(argc, argv);
@@ -806,6 +867,8 @@ int main(int argc, char **argv) {
                                currentHROVMessageV2->GetMsgSize());
 
   ///// GPS
+  tf::TransformListener listener;
+  double origin_lat = 39.993428, origin_lon = -0.068574, origin_alt = 0;
   Eigen::Vector3d map_origin; //!< geodetic origin [lla]
 
   // Constructor for a ellipsoid
@@ -813,6 +876,8 @@ int main(int argc, char **argv) {
                                   GeographicLib::Constants::WGS84_f());
 
   GeographicLib::LocalCartesian localNED;
+  localNED =
+      GeographicLib::LocalCartesian(origin_lat, origin_lon, origin_alt, earth);
 
   std::shared_ptr<GeographicLib::Geoid> egm96_5;
   egm96_5 = std::make_shared<GeographicLib::Geoid>("egm96-5", "", true, true);
@@ -823,7 +888,13 @@ int main(int argc, char **argv) {
 
     localNED = GeographicLib::LocalCartesian(map_origin.x(), map_origin.y(),
                                              map_origin.z(), earth);
-    home_set = true;
+
+    double lat_error = map_origin.x() - origin_lat;
+    double lon_error = map_origin.y() - origin_lon;
+    double alt_error = map_origin.z() - origin_alt;
+    double error = 1;
+
+    home_set = lat_error < error && lon_error < error && alt_error < error;
   });
 
   control->SetLocalPositionNEDCb([&](const mavlink_local_position_ned_t &msg) {
@@ -844,53 +915,117 @@ int main(int argc, char **argv) {
     currentHROVMessage_mutex.unlock();
     currentHROVMessage_cond.notify_one();
 
+    ned_mutex.lock();
+
+    ned_x = msg.x;
+    ned_y = msg.y;
+    ned_z = msg.z;
+
+    ned_mutex.unlock();
+
   });
 
   control->SetGlobalPositionInt([&](const mavlink_global_position_int_t &msg) {
-    double ecef_x, ecef_y, ecef_z, ned_x, ned_y, ned_z;
-    int32_t latitude, longitude;
-    auto alt =
-        (msg.alt / (double)1e3) -
-        GeographicLib::Geoid::ELLIPSOIDTOGEOID * (*egm96_5)(msg.lat, msg.lon);
-
-    earth.Forward(msg.lat / 1e7, msg.lon / 1e7, alt, ecef_x, ecef_y, ecef_z);
-
-    if (home_set) {
-
-      localNED.Forward(msg.lat / 1e7, msg.lon / 1e7, (msg.alt / (double)1e3),
-                       ned_x, ned_y, ned_z);
-      Log->Info("lat,lon,alt: {} : {} : {} ---- NED x,y,z {} : {} : {}",
-                msg.lat, msg.lon, msg.alt, ned_x, ned_y, ned_z);
-
-      latitude = msg.lat;
-      longitude = msg.lon;
-
-      //      currentHROVMessage_mutex.lock();
-      //      currentHROVMessageV2->SetX(ned_x);
-      //      currentHROVMessageV2->SetY(ned_y);
-      //      currentHROVMessage_updated = true;
-      //      currentHROVMessage_mutex.unlock();
-      //      currentHROVMessage_cond.notify_one();
-    }
-
-    //        Log->Info("lat,lon,alt: {} : {} : {} ---- NED x,y,z {} : {} : {}
-    //        ----
-    //        ECEF "
-    //                  "x,y,z {} : {} : {}",
-    //                  msg.lat, msg.lon, msg.alt, ned_x, ned_y, ned_z, ecef_x,
-    //                  ecef_y,
-    //                  ecef_z);
-
-    //    Log->Info("lat,lon,alt: {} : {} : {} ---- NED x,y,z {} : {} : {}",
-    //    msg.lat,
-    //              msg.lon, msg.alt, ned_x, ned_y, ned_z);
+    gps_mutex.lock();
+    latitude = msg.lat;
+    longitude = msg.lon;
+    gps_mutex.unlock();
 
   });
-  try {
 
+  std::thread setHomeWorker([&]() {
+    while (!home_set) {
+      control->SetHome(origin_lat, origin_lon, origin_alt);
+      std::this_thread::sleep_for(chrono::seconds(4));
+    }
+  });
+
+  std::thread GPSInput([&]() {
+    while (1) {
+      tf::StampedTransform ned_origin_rov_tf;
+      mavlink_gps_input_t gpsinput;
+      try {
+        auto now = ros::Time::now();
+        listener.waitForTransform("local_origin_ned", "rov", now,
+                                  ros::Duration(1.0));
+        listener.lookupTransform("local_origin_ned", "rov", ros::Time(0),
+                                 ned_origin_rov_tf);
+
+      } catch (tf::TransformException ex) {
+        ROS_ERROR("%s", ex.what());
+        Log->Warn("GPS lost. Sending last filtered position...");
+        ros::Duration(1.0).sleep();
+        gps_mutex.lock();
+        gpsinput.lat = latitude;  // [degrees * 1e7]
+        gpsinput.lon = longitude; // [degrees * 1e7]
+        gps_mutex.unlock();
+      }
+
+      tf::Vector3 position;
+      position = ned_origin_rov_tf.getOrigin();
+
+      Eigen::Vector3d geodetic;
+      Eigen::Vector3d current_ned(position.x(), position.y(), position.z());
+
+      try {
+        localNED.Reverse(current_ned.x(), current_ned.y(), current_ned.z(),
+                         geodetic.x(), geodetic.y(), geodetic.z());
+      } catch (const std::exception &e) {
+        ROS_INFO_STREAM("FGPS: Caught exception: " << e.what() << std::endl);
+        continue;
+      }
+
+      gpsinput.lat = geodetic.x() * 1e7; // [degrees * 1e7]
+      gpsinput.lon = geodetic.y() * 1e7; // [degrees * 1e7]
+
+      // BY GPS_INPUT
+      uint32_t IGNORE_VELOCITIES_AND_ACCURACY =
+          (GPS_INPUT_IGNORE_FLAG_ALT | GPS_INPUT_IGNORE_FLAG_VEL_HORIZ |
+           GPS_INPUT_IGNORE_FLAG_VEL_VERT |
+           GPS_INPUT_IGNORE_FLAG_SPEED_ACCURACY |
+           GPS_INPUT_IGNORE_FLAG_HORIZONTAL_ACCURACY |
+           GPS_INPUT_IGNORE_FLAG_VERTICAL_ACCURACY);
+
+      gpsinput.gps_id = 0;
+      gpsinput.fix_type = 3;
+      gpsinput.hdop = 1;
+      gpsinput.vdop = 1;
+      gpsinput.satellites_visible = 10;
+      gpsinput.ignore_flags = IGNORE_VELOCITIES_AND_ACCURACY;
+      control->SendGPSInput(gpsinput);
+
+      Log->Info("Lat: {} ; Lon: {}", gpsinput.lat, gpsinput.lon);
+      std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    }
+  });
+
+  tf::TransformBroadcaster ekfBroadcaster;
+  tf::StampedTransform ned_origin_ekfrov_tf;
+  try {
     ros::Rate rate(30); // 30 hz
 
     while (ros::ok()) {
+      attitude_mutex.lock();
+      tfScalar last_roll = g_roll, last_pitch = g_pitch, last_yaw = g_yaw;
+      attitude_mutex.unlock();
+
+      ned_mutex.lock();
+      double last_x = ned_x, last_y = ned_y, last_z = ned_z;
+      ned_mutex.unlock();
+
+      tf::Quaternion attitude =
+          tf::createQuaternionFromRPY(0, 0, last_yaw).normalize();
+
+      double heading = g_yaw * (180. / M_PI);
+      if (heading < 0)
+        heading = heading + 360;
+
+      ned_origin_ekfrov_tf.setOrigin(tf::Vector3(last_x, last_y, last_z));
+      ned_origin_ekfrov_tf.setRotation(attitude);
+
+      ekfBroadcaster.sendTransform(
+          tf::StampedTransform(ned_origin_ekfrov_tf, ros::Time::now(),
+                               "local_origin_ned", "ekfrov"));
       ros::spinOnce();
       rate.sleep();
     }
