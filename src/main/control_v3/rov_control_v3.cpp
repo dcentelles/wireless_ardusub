@@ -20,6 +20,7 @@
 
 #include <mavros/frame_tf.h>
 #include <tf_conversions/tf_eigen.h>
+#include <wireless_ardusub/pid.h>
 
 using namespace cpplogging;
 using namespace std::chrono_literals;
@@ -27,6 +28,7 @@ using namespace telerobotics;
 using namespace mavlink_cpp;
 using namespace std;
 using namespace telerobotics;
+using namespace wireless_ardusub;
 
 struct Params {
   std::string serialPort, masterUri, dccommsId;
@@ -100,6 +102,8 @@ static std::mutex gps_mutex, ned_mutex;
 static double ned_x, ned_y, ned_z;
 static std::mutex attitude_mutex;
 static tfScalar g_yaw, g_pitch, g_roll;
+
+static PID pid = PID(0.1, 100, -100, 0.1, 0.01, 0.5);
 
 void notifyHROVMessageUpdated() {
   currentHROVMessage_updated = true;
@@ -274,6 +278,26 @@ void keepHeadingWorkLoop() {
 
     keepHeadingIteration();
     this_thread::sleep_for(chrono::milliseconds(200));
+  }
+}
+
+static bool guidedMode = false;
+static bool goToMission = false;
+static std::mutex goToMission_mutex;
+static std::condition_variable goToMission_cond;
+
+void guidedModeIteration(void) {}
+
+void goToWorkLoop() {
+  while (1) {
+    std::unique_lock<std::mutex> lock(goToMission_mutex);
+    while (!goToMission) {
+      Log->Debug("no go to mission");
+      goToMission_cond.wait(lock);
+    }
+    Log->Debug("go to mission received");
+    guidedModeIteration();
+    this_thread::sleep_for(chrono::milliseconds(100));
   }
 }
 
@@ -524,12 +548,11 @@ void messageSenderWork() {
     auto heading = currentHROVMessageV2->GetHeading();
     auto navMode = (int)currentHROVMessageV2->GetNavMode();
     auto armed = currentHROVMessageV2->Armed();
-    //    Log->Info("OWN STATE - OID: {} ; CC: {} ; RDY: {} ; HD: {} ; NAV: {} ;
-    //    "
-    //              "ARMED: {} ; x:y:z: "
-    //              "{} : {} : {}",
-    //              oid, cancelled ? 1 : 0, ready ? 1 : 0, heading, navMode,
-    //              armed ? 1 : 0, x, y, altitude);
+    Log->Info("OWN STATE - OID: {} ; CC: {} ; RDY: {} ; HD: {} ; NAV: {} ;"
+              "ARMED: {} ; x:y:z: "
+              "{} : {} : {}",
+              oid, cancelled ? 1 : 0, ready ? 1 : 0, heading, navMode,
+              armed ? 1 : 0, x, y, altitude);
     currentHROVMessage_updated = false;
   }
 }
@@ -552,67 +575,68 @@ void operatorMsgParserWork() {
     if (lastOrderType == OperatorMessageV2::OrderType::Move) {
       lastOrder = currentOperatorMessage->GetMoveOrderCopy();
       arm(lastOrder->Arm());
-      if (armed) {
-        std::string modeName = "";
-        ARDUSUB_NAV_MODE mode = lastOrder->GetFlyMode();
-        switch (mode) {
-        case ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD:
-          modeName = "DEPTH HOLD";
-          control->SetDepthHoldMode();
-          break;
-        case ARDUSUB_NAV_MODE::NAV_STABILIZE:
-          modeName = "STABILIZE";
-          control->SetStabilizeMode();
-          break;
-        case ARDUSUB_NAV_MODE::NAV_MANUAL:
-          modeName = "MANUAL";
-          control->SetManualMode();
-          break;
-        case ARDUSUB_NAV_MODE::NAV_POS_HOLD:
-          modeName = "POS HOLD";
-          control->SetFlyMode(FLY_MODE_R::POS_HOLD);
-          break;
-        case ARDUSUB_NAV_MODE::NAV_GUIDED:
-          modeName = "GUIDED";
-          control->EnableManualControl(false);
-          control->SetFlyMode(FLY_MODE_R::GUIDED);
-          break;
-        default:
-          break;
-        }
-        if (mode != ARDUSUB_NAV_MODE::NAV_GUIDED)
-          control->EnableManualControl(true);
-        Log->Info(
-            "Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
-            lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
-            lastOrder->GetR(), lastOrder->Arm() ? "true" : "false", modeName);
-        int x = lastOrder->GetX();
-        int y = lastOrder->GetY();
-        int z = lastOrder->GetZ();
-        int r = lastOrder->GetR();
-        // order:  y = 200/256x
-        // z control: y = 200/1000x - 100
-        // x,y and r control: y = 200/2000x
-
-        double xNorm = getJoyAxisNormalized(x);
-        double yNorm = getJoyAxisNormalized(y);
-        double zNorm = getJoyAxisNormalized(z);
-        double rNorm = getJoyAxisNormalized(r);
-
-        xVel = ceil(arduSubXYR(xNorm));
-        yVel = ceil(arduSubXYR(yNorm));
-        zVel = ceil(arduSubZ(zNorm));
-        if (!keepOrientation)
-          rVel = ceil(arduSubXYR(rNorm));
-
-        //      Log->Info(
-        //          "Manual control: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ;
-        //          Mode: {}",
-        //          xVel, yVel, zVel, rVel, lastOrder->Arm() ? "true" : "false",
-        //          modeName);
-
-        control->SetManualControl(xVel, yVel, zVel, rVel);
+      // if (armed) {
+      std::string modeName = "";
+      ARDUSUB_NAV_MODE mode = lastOrder->GetFlyMode();
+      switch (mode) {
+      case ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD:
+        modeName = "DEPTH HOLD";
+        control->SetDepthHoldMode();
+        break;
+      case ARDUSUB_NAV_MODE::NAV_STABILIZE:
+        modeName = "STABILIZE";
+        control->SetStabilizeMode();
+        break;
+      case ARDUSUB_NAV_MODE::NAV_MANUAL:
+        modeName = "MANUAL";
+        control->SetManualMode();
+        break;
+      case ARDUSUB_NAV_MODE::NAV_POS_HOLD:
+        modeName = "POS HOLD";
+        control->SetFlyMode(FLY_MODE_R::POS_HOLD);
+        break;
+      case ARDUSUB_NAV_MODE::NAV_GUIDED:
+        modeName = "GUIDED";
+        control->EnableManualControl(false);
+        control->SetFlyMode(FLY_MODE_R::GUIDED);
+        // guidedMode = true;
+        break;
+      default:
+        break;
       }
+      if (mode != ARDUSUB_NAV_MODE::NAV_GUIDED)
+        control->EnableManualControl(true);
+      Log->Info(
+          "Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
+          lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
+          lastOrder->GetR(), lastOrder->Arm() ? "true" : "false", modeName);
+      int x = lastOrder->GetX();
+      int y = lastOrder->GetY();
+      int z = lastOrder->GetZ();
+      int r = lastOrder->GetR();
+      // order:  y = 200/256x
+      // z control: y = 200/1000x - 100
+      // x,y and r control: y = 200/2000x
+
+      double xNorm = getJoyAxisNormalized(x);
+      double yNorm = getJoyAxisNormalized(y);
+      double zNorm = getJoyAxisNormalized(z);
+      double rNorm = getJoyAxisNormalized(r);
+
+      xVel = ceil(arduSubXYR(xNorm));
+      yVel = ceil(arduSubXYR(yNorm));
+      zVel = ceil(arduSubZ(zNorm));
+      if (!keepOrientation)
+        rVel = ceil(arduSubXYR(rNorm));
+
+      //      Log->Info(
+      //          "Manual control: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ;
+      //          Mode: {}",
+      //          xVel, yVel, zVel, rVel, lastOrder->Arm() ? "true" : "false",
+      //          modeName);
+
+      control->SetManualControl(xVel, yVel, zVel, rVel);
+      //  }
     } else {
       handleNewOrder();
     }
@@ -643,18 +667,11 @@ void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
 
 void handleNewHUDData(const mavlink_vfr_hud_t &msg) {
   currentHROVMessage_mutex.lock();
-  currentHROVMessageV2->SetHeading(msg.heading);
-  // currentHROVMessageV2->SetZ(-1 * msg.alt * 100);
+  // currentHROVMessageV2->SetHeading(msg.heading);
+  currentHROVMessageV2->SetZ(-1 * msg.alt * 100);
   currentHROVMessage_updated = true;
   currentHROVMessage_mutex.unlock();
   currentHROVMessage_cond.notify_one();
-
-  currentHROVPose_mutex.lock();
-  currentHROVPose.heading = msg.heading;
-  // currentHROVPose.Z = msg.alt;
-  currentHROVPose_updated = true;
-  currentHROVPose_mutex.unlock();
-  currentHROVPose_cond.notify_one();
 }
 
 void handleNewNavigationData(const mavlink_attitude_t &attitude) {
@@ -664,7 +681,7 @@ void handleNewNavigationData(const mavlink_attitude_t &attitude) {
   g_roll = attitude.roll;
   attitude_mutex.unlock();
 
-  //  Log->Info("yaw: {} ; pitch: {} ; roll: {}", g_yaw, g_pitch, g_roll);
+  Log->Info("yaw: {} ; pitch: {} ; roll: {}", g_yaw, g_pitch, g_roll);
   int rx, ry, rz;
   rx = telerobotics::utils::GetDiscreteYaw(g_roll);
   ry = telerobotics::utils::GetDiscreteYaw(g_pitch);
@@ -675,41 +692,38 @@ void handleNewNavigationData(const mavlink_attitude_t &attitude) {
   // rz = rz > 180 ? -(360-rz) : rz;
 
   currentHROVMessage_mutex.lock();
-  // currentHROVMessage->SetYaw (rz);
   currentHROVMessageV2->SetRoll(rx);
   currentHROVMessageV2->SetPitch(ry);
   currentHROVMessage_updated = true;
   currentHROVMessage_mutex.unlock();
   currentHROVMessage_cond.notify_one();
-
-  currentHROVPose_mutex.lock();
-  // currentHROVPose.yaw = 0;
-  currentHROVPose_updated = true;
-  currentHROVPose_mutex.unlock();
-  currentHROVPose_cond.notify_one();
 }
 
 void handleNewArdusubState(const mavlink_heartbeat_t &msg) {
   ARDUSUB_NAV_MODE mode;
-  switch (msg.custom_mode) {
-  case FLY_MODE_R::MANUAL:
-    mode = ARDUSUB_NAV_MODE::NAV_MANUAL;
-    break;
-  case FLY_MODE_R::STABILIZE:
-    mode = ARDUSUB_NAV_MODE::NAV_STABILIZE;
-    break;
-  case FLY_MODE_R::DEPTH_HOLD:
-    mode = ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD;
-    break;
-  case FLY_MODE_R::POS_HOLD:
-    mode = ARDUSUB_NAV_MODE::NAV_POS_HOLD;
-    break;
-  case FLY_MODE_R::GUIDED:
+  if (false)
     mode = ARDUSUB_NAV_MODE::NAV_GUIDED;
-    break;
-  default:
-    mode = ARDUSUB_NAV_MODE::NAV_UNKNOWN;
-    break;
+  else {
+    switch (msg.custom_mode) {
+    case FLY_MODE_R::MANUAL:
+      mode = ARDUSUB_NAV_MODE::NAV_MANUAL;
+      break;
+    case FLY_MODE_R::STABILIZE:
+      mode = ARDUSUB_NAV_MODE::NAV_STABILIZE;
+      break;
+    case FLY_MODE_R::DEPTH_HOLD:
+      mode = ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD;
+      break;
+    case FLY_MODE_R::POS_HOLD:
+      mode = ARDUSUB_NAV_MODE::NAV_POS_HOLD;
+      break;
+    case FLY_MODE_R::GUIDED:
+      mode = ARDUSUB_NAV_MODE::NAV_GUIDED;
+      break;
+    default:
+      mode = ARDUSUB_NAV_MODE::NAV_UNKNOWN;
+      break;
+    }
   }
   // bool armed = msg.base_mode & MAV_MODE_FLAG_SAFETY_ARMED;
 
@@ -868,23 +882,28 @@ int main(int argc, char **argv) {
 
   ///// GPS VISION
   tf::TransformListener listener;
+
+  // Constructor for a ellipsoid
+
+  std::shared_ptr<GeographicLib::Geoid> egm96_5;
+  egm96_5 = std::make_shared<GeographicLib::Geoid>("egm96-5", "", true, true);
+
+  GeographicLib::Geocentric earth(GeographicLib::Constants::WGS84_a(),
+                                  GeographicLib::Constants::WGS84_f());
+
   double origin_lat = 39.993428, origin_lon = -0.068574, origin_alt = 0;
-  // double origin_lat = 0, origin_lon = 0, origin_alt = 0;
+  // double origin_alt = GeographicLib::Geoid::GEOIDTOELLIPSOID *
+  // (*egm96_5)(origin_lat, origin_alt);
+
   Eigen::Vector3d map_origin; //!< geodetic origin [lla]
   map_origin = {origin_lat, origin_lon, origin_alt};
   /**
    * @brief Conversion of the origin from geodetic coordinates (LLA)
    * to ECEF (Earth-Centered, Earth-Fixed)
    */
-  // Constructor for a ellipsoid
-  GeographicLib::Geocentric earth(GeographicLib::Constants::WGS84_a(),
-                                  GeographicLib::Constants::WGS84_f());
 
   GeographicLib::LocalCartesian localNED(map_origin.x(), map_origin.y(),
                                          map_origin.z(), earth);
-
-  std::shared_ptr<GeographicLib::Geoid> egm96_5;
-  egm96_5 = std::make_shared<GeographicLib::Geoid>("egm96-5", "", true, true);
 
   control->SetHomeUpdatedCb([&](const mavlink_home_position_t &msg) {
 
@@ -915,16 +934,17 @@ int main(int argc, char **argv) {
 
     ned_mutex.lock();
 
-//    ned_x = msg.x;
-//    ned_y = msg.y;
+    //    ned_x = msg.x;
+    //    ned_y = msg.y;
     ned_z = msg.z;
 
     ned_mutex.unlock();
-    currentHROVMessage_mutex.lock();
-    currentHROVMessageV2->SetZ(msg.z * 100);
-    currentHROVMessage_updated = true;
-    currentHROVMessage_mutex.unlock();
-    currentHROVMessage_cond.notify_one();
+
+    //    currentHROVMessage_mutex.lock();
+    //    currentHROVMessageV2->SetZ(msg.z * 100);
+    //    currentHROVMessage_updated = true;
+    //    currentHROVMessage_mutex.unlock();
+    //    currentHROVMessage_cond.notify_one();
 
     //    ned_mutex.lock();
 
@@ -948,13 +968,13 @@ int main(int argc, char **argv) {
                      ned_x, ned_y, ned_z);
     ned_mutex.unlock();
 
-    currentHROVMessage_mutex.lock();
-    currentHROVMessageV2->SetX(ned_x * 100);
-    currentHROVMessageV2->SetY(ned_y * 100);
-    // currentHROVMessageV2->SetZ(ned_z * 100);
-    currentHROVMessage_updated = true;
-    currentHROVMessage_mutex.unlock();
-    currentHROVMessage_cond.notify_one();
+    //    currentHROVMessage_mutex.lock();
+    //    currentHROVMessageV2->SetX(ned_x * 100);
+    //    currentHROVMessageV2->SetY(ned_y * 100);
+    //    // currentHROVMessageV2->SetZ(ned_z * 100);
+    //    currentHROVMessage_updated = true;
+    //    currentHROVMessage_mutex.unlock();
+    //    currentHROVMessage_cond.notify_one();
 
     Log->Info("NED:"
               "\ttime_boot_ms: {}\n"
@@ -995,6 +1015,20 @@ int main(int argc, char **argv) {
 
       tf::Vector3 position;
       position = ned_origin_rov_tf.getOrigin();
+      tf::Quaternion rot = ned_origin_rov_tf.getRotation();
+      double heading = tf::getYaw(rot);
+
+      heading = heading * (180. / M_PI);
+      if (heading < 0)
+        heading = heading + 360;
+
+      currentHROVMessage_mutex.lock();
+      currentHROVMessageV2->SetX(position.x() * 100);
+      currentHROVMessageV2->SetY(position.y() * 100);
+      currentHROVMessageV2->SetHeading(heading);
+      currentHROVMessage_updated = true;
+      currentHROVMessage_mutex.unlock();
+      currentHROVMessage_cond.notify_one();
 
       Eigen::Vector3d geodetic;
       Eigen::Vector3d current_ned(position.x(), position.y(), position.z());
@@ -1057,9 +1091,9 @@ int main(int argc, char **argv) {
       ned_origin_ekfrov_tf.setOrigin(tf::Vector3(last_x, last_y, last_z));
       ned_origin_ekfrov_tf.setRotation(attitude);
 
-      ekfBroadcaster.sendTransform(
-          tf::StampedTransform(ned_origin_ekfrov_tf, ros::Time::now(),
-                               "local_origin_ned", "ekfrov"));
+      //      ekfBroadcaster.sendTransform(
+      //          tf::StampedTransform(ned_origin_ekfrov_tf, ros::Time::now(),
+      //                               "local_origin_ned", "ekfrov"));
       ros::spinOnce();
       rate.sleep();
     }

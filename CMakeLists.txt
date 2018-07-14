@@ -152,7 +152,7 @@ target_link_libraries(${ROV_V2} ${TELEROBOTICS_GIT} ${MAVLINK_CPP_GIT})
 add_executable (${OP_V3} ${SRCPATH}main/control_v3/operator_control_v3.cpp)
 target_link_libraries(${OP_V3} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES})
 add_dependencies(${OP_V3} ${PROJECT_NAME}_gencfg)
-add_executable (${ROV_V3} ${SRCPATH}main/control_v3/rov_control_v3.cpp)
+add_executable (${ROV_V3} ${SRCPATH}main/control_v3/rov_control_v3.cpp ${SRCPATH}lib/src/pid.cpp)
 target_link_libraries(${ROV_V3} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
 
 add_executable (NEDPublisher ${SRCPATH}main/debug_scripts/NEDPublisher.cpp)
