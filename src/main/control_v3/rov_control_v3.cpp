@@ -454,11 +454,17 @@ void handleNewOrder() {
         // see
         // https://github.com/mavlink/mavros/blob/de9f39a719b091b8448214a17d27b3b1c415d0dc/mavros/src/lib/uas_data.cpp#L55
 
-        // heading: 0-360
-        heading -= 360;
-        double yaw = heading * M_PI / 180.;
+        double x2 = x / 100.;
+        double y2 = y / 100.;
+        double z2 = z / 100.;
 
-        sendGoToLocalNED(x / 100., y / 100., z / 100., yaw);
+        // heading: 0-360
+        double yaw = heading - 360;
+        yaw = yaw * M_PI / 180.;
+
+        Log->Info("GoTo: {} ; {} ; {} ; {} ({})", x2, y2, z2, heading, yaw);
+
+        sendGoToLocalNED(x2, y2, z2, yaw);
         break;
       }
       }
@@ -981,13 +987,13 @@ int main(int argc, char **argv) {
 
   control->SetLocalPositionNEDCb([&](const mavlink_local_position_ned_t &msg) {
     Log->Info("LOCAL_POSITION_NED:"
-              "\ttime_boot_ms: {}\n"
-              "\tx: {}\n"
-              "\ty: {}\n"
-              "\tz: {}\n"
-              "\tvx: {}\n"
-              "\tvy: {}\n"
-              "\tvz: {}\n",
+              "\ttime_boot_ms: {} ; "
+              "x: {} ; "
+              "y: {} ; "
+              "z: {} ; "
+              "vx: {} ; "
+              "vy: {} ; "
+              "vz: {} ; ",
               msg.time_boot_ms, msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz);
 
     //    currentHROVMessage_mutex.lock();

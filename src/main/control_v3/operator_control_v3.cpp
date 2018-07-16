@@ -635,11 +635,14 @@ void OperatorController::ActionWorker(
     break;
   }
   case 5: { // GOTO START
-    Log->info("Go to request received");
+    double x = goal->x * 100, y = goal->y * 100, z = goal->depth * 100,
+           heading = goal->keep_heading_degrees;
+    double yaw = heading - 360;
+    yaw = yaw * M_PI / 180.;
+
+    Log->info("GoTo: {} ; {} ; {} ; {} ({})", goal->x, goal->y, goal->depth, heading, yaw);
     _currentHROVMessage->SetNavMode(ARDUSUB_NAV_MODE::NAV_GUIDED);
-    _currentOperatorMessage->SetGoToOrder(goal->x * 100, goal->y * 100,
-                                          goal->depth * 100,
-                                          goal->keep_heading_degrees);
+    _currentOperatorMessage->SetGoToOrder(x, y, z, heading);
     break;
   }
   }
