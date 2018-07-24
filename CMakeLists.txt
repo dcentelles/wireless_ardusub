@@ -167,6 +167,9 @@ target_link_libraries(GPSInputTf ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${TELERO
 add_executable (pid_0 ${SRCPATH}main/debug_scripts/pid_0.cpp)
 target_link_libraries(pid_0 ${PROJECT_NAME})
 
+add_executable (goto_range ${SRCPATH}main/debug_scripts/goto_range.cpp)
+target_link_libraries(goto_range ${catkin_LIBRARIES} ${TELEROBOTICS_GIT})
+
 install(TARGETS ${ROVA}
         LIBRARY DESTINATION "lib"
         RUNTIME DESTINATION "bin"

@@ -892,9 +892,13 @@ int main(int argc, char **argv) {
   commsNode->SetAsyncMode();
 
   if (params.log2File) {
+    Log->SetLogFormatter(
+        std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));
     Log->LogToFile("rov_v3_control");
     control->LogToFile("rov_v3_gcs");
     commsNode->LogToFile("rov_v3_comms_node");
+    commsNode->SetLogFormatter(
+        std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));
   }
 
   if (params.serialPort != "service") {

@@ -335,6 +335,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
   _initLT = false;
   _initRT = false;
   SetLogName("TeleopJoy");
+  SetLogFormatter(std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));
   SetAsyncMode(true);
   Log->info("Sender initialized");
 
@@ -355,6 +356,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
   _teleopOrder = TeleopOrder::Build();
   _node = CreateObject<Operator>();
   _node->SetLogLevel(LogLevel::info);
+  _node->SetLogFormatter(std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));
 
   if (params.log2File) {
     _node->LogToFile("op_v3_comms_node");
@@ -382,6 +384,8 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
     commsService->SetCommsDeviceId(dccommsId);
     commsService->SetLogLevel(LogLevel::info);
     commsService->Start();
+    commsService->SetLogFormatter(
+        std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));
     _node->SetComms(commsService);
   }
 
@@ -538,10 +542,10 @@ void OperatorController::JoyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
     break;
   }
 
-  //  Info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
-  //       _teleopOrder->GetX(), _teleopOrder->GetY(), _teleopOrder->GetZ(),
-  //       _teleopOrder->GetR(), _teleopOrder->Arm() ? "true" : "false",
-  //       modeName);
+    Info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
+         _teleopOrder->GetX(), _teleopOrder->GetY(), _teleopOrder->GetZ(),
+         _teleopOrder->GetR(), _teleopOrder->Arm() ? "true" : "false",
+         modeName);
   _teleopOrder_mutex.unlock();
 
   // remember current button states for future comparison
@@ -640,7 +644,8 @@ void OperatorController::ActionWorker(
     double yaw = heading - 360;
     yaw = yaw * M_PI / 180.;
 
-    Log->info("GoTo: {} ; {} ; {} ; {} ({})", goal->x, goal->y, goal->depth, heading, yaw);
+    Log->info("GoTo: {} ; {} ; {} ; {} ({})", goal->x, goal->y, goal->depth,
+              heading, yaw);
     _currentHROVMessage->SetNavMode(ARDUSUB_NAV_MODE::NAV_GUIDED);
     _currentOperatorMessage->SetGoToOrder(x, y, z, heading);
     break;
@@ -771,6 +776,11 @@ int main(int argc, char **argv) {
   teleop.LogToConsole(params.log2Console);
   teleop.SetLogLevel(LogLevel::info);
   teleop.SetAsyncMode();
+
+  teleop.SetLogFormatter(
+      std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));
+  Log->SetLogFormatter(
+      std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));
   if (params.log2File) {
     Log->LogToFile("op_v3_main");
     teleop.LogToFile("op_v3_control");
