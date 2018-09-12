@@ -25,31 +25,33 @@ struct FDMData {
   uint32_t padding;
   double longitude;
   double latitude;
+  //  uint64_t longitude;
+  //  uint64_t latitude;
   double altitude;
   float agl;
   float phi;
   float theta;
   float psi;
 
-  float phidot;		// roll rate (radians/sec)
-  float thetadot;		// pitch rate (radians/sec)
-  float psidot;		// yaw rate (radians/sec)
-  float vcas;		        // calibrated airspeed
-  float climb_rate;		// feet per second
-  float v_north;              // north velocity in local/body frame, fps
-  float v_east;               // east velocity in local/body frame, fps
-  float v_down;               // down/vertical velocity in local/body frame, fps
-  float v_wind_body_north;    // north velocity in local/body frame
-                              // relative to local airmass, fps
-  float v_wind_body_east;     // east velocity in local/body frame
-                              // relative to local airmass, fps
-  float v_wind_body_down;     // down/vertical velocity in local/body
-                              // frame relative to local airmass, fps
+  float phidot;            // roll rate (radians/sec)
+  float thetadot;          // pitch rate (radians/sec)
+  float psidot;            // yaw rate (radians/sec)
+  float vcas;              // calibrated airspeed
+  float climb_rate;        // feet per second
+  float v_north;           // north velocity in local/body frame, fps
+  float v_east;            // east velocity in local/body frame, fps
+  float v_down;            // down/vertical velocity in local/body frame, fps
+  float v_wind_body_north; // north velocity in local/body frame
+                           // relative to local airmass, fps
+  float v_wind_body_east;  // east velocity in local/body frame
+                           // relative to local airmass, fps
+  float v_wind_body_down;  // down/vertical velocity in local/body
+                           // frame relative to local airmass, fps
 
   // Accelerations
-  float A_X_pilot;		// X accel in body frame ft/sec^2
-  float A_Y_pilot;		// Y accel in body frame ft/sec^2
-  float A_Z_pilot;		// Z accel in body frame ft/sec^2
+  float A_X_pilot; // X accel in body frame ft/sec^2
+  float A_Y_pilot; // Y accel in body frame ft/sec^2
+  float A_Z_pilot; // Z accel in body frame ft/sec^2
 };
 
 FDMData fdmData;
@@ -67,6 +69,9 @@ int main(int argc, char **argv) {
   ros::Publisher bluerov2Pub;
   bluerov2Pub = nh.advertise<geometry_msgs::Pose>("/bluerov2/pose", 1);
 
+  double degRad = 180 / M_PI;
+
+
   std::thread receiver([log]() {
     fdmDataAvailable = false;
 
@@ -79,7 +84,7 @@ int main(int argc, char **argv) {
     locAddr.sin_family = AF_INET;
     locAddr.sin_addr.s_addr = INADDR_ANY;
     locAddr.sin_port = htons(localPort);
-    if (fcntl(sockfd, F_SETFL, O_ASYNC) < 0) {
+    if (fcntl(sockfd, F_SETFL, O_NONBLOCK) < 0) {
       close(sockfd);
       exit(EXIT_FAILURE);
     }
@@ -103,18 +108,30 @@ int main(int argc, char **argv) {
     float *theta = phi + 1;
     float *psi = theta + 1;
     while (1) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
       memset(rxbuff, 0, GCS_BUFFER_LENGTH);
       socklen_t fromlen = sizeof(sockaddr);
 
-      ssize_t recsize = recvfrom(sockfd, (void *)rxbuff, GCS_BUFFER_LENGTH, 0,
-                                 (struct sockaddr *)&simAddr, &fromlen);
+      ssize_t recsize;
+      do {
+        recsize = recvfrom(sockfd, (void *)rxbuff, GCS_BUFFER_LENGTH, 0,
+                           (struct sockaddr *)&simAddr, &fromlen);
+      } while (recsize > 0);
+
+      do {
+        recsize = recvfrom(sockfd, (void *)rxbuff, GCS_BUFFER_LENGTH, 0,
+                           (struct sockaddr *)&simAddr, &fromlen);
+      } while (recsize <= 0);
+
       if (recsize > 0) {
+        //  log->Info("SIZE: {}", recsize);
         fdmDataMutex.lock();
         if (true) {
           Utils::Switch4Bytes(&fdmData.version, version);
           Utils::Switch4Bytes(&fdmData.padding, padding);
           Utils::Switch8Bytes(&fdmData.longitude, longitude);
           Utils::Switch8Bytes(&fdmData.latitude, latitude);
+
           Utils::Switch8Bytes(&fdmData.altitude, altitude);
           Utils::Switch4Bytes(&fdmData.agl, agl);
           Utils::Switch4Bytes(&fdmData.phi, phi);
@@ -132,22 +149,22 @@ int main(int argc, char **argv) {
           fdmData.psi = *psi;
         }
         fdmDataAvailable = true;
-        fdmDataCond.notify_one();
-        log->Info("Received FDM data!!:\n"
-                  "\tversion: {}\n"
-                  "\tpadding: {}\n"
-                  "\tlongitude: {:.9f}\n"
-                  "\tlatitude: {:.9f}\n"
-                  "\taltitude: {:.9f}\n"
-                  "\tagl: {:.9f}\n"
-                  "\tphi: {:.9f}\n"
-                  "\ttheta: {:.9f}\n"
-                  "\tpsi: {:.9f}",
-                  fdmData.version, fdmData.padding, fdmData.longitude,
-                  fdmData.latitude, fdmData.altitude, fdmData.agl, fdmData.phi,
-                  fdmData.theta, fdmData.psi);
+        //        log->Info("Received FDM data!!:\n"
+        //                  "\tversion: {}\n"
+        //                  "\tpadding: {}\n"
+        //                  "\tlongitude: {:.9f}\n"
+        //                  "\tlatitude: {:.9f}\n"
+        //                  "\taltitude: {:.9f}\n"
+        //                  "\tagl: {:.9f}\n"
+        //                  "\tphi: {:.9f}\n"
+        //                  "\ttheta: {:.9f}\n"
+        //                  "\tpsi: {:.9f}",
+        //                  fdmData.version, fdmData.padding, fdmData.longitude,
+        //                  fdmData.latitude, fdmData.altitude, fdmData.agl,
+        //                  fdmData.phi,
+        //                  fdmData.theta, fdmData.psi);
         fdmDataMutex.unlock();
-
+        fdmDataCond.notify_one();
       }
     }
 
@@ -163,19 +180,19 @@ int main(int argc, char **argv) {
         log->Info("Waiting for FDM data...");
     }
     fdmDataAvailable = false;
-//    log->Info("Received FDM data!!:\n"
-//              "\tversion: {}\n"
-//              "\tpadding: {}\n"
-//              "\tlongitude: {:.9f}\n"
-//              "\tlatitude: {:.9f}\n"
-//              "\taltitude: {:.9f}\n"
-//              "\tagl: {:.9f}\n"
-//              "\tphi: {:.9f}\n"
-//              "\ttheta: {:.9f}\n"
-//              "\tpsi: {:.9f}",
-//              fdmData.version, fdmData.padding, fdmData.longitude,
-//              fdmData.latitude, fdmData.altitude, fdmData.agl, fdmData.phi,
-//              fdmData.theta, fdmData.psi);
+    log->Info("Received FDM data!!:\n"
+              "\tversion: {}\n"
+              "\tpadding: {}\n"
+              "\tlongitude: {:.11f}\n"
+              "\tlatitude: {:.11f}\n"
+              "\taltitude: {:.9f}\n"
+              "\tagl: {:.9f}\n"
+              "\tphi: {:.9f}\n"
+              "\ttheta: {:.9f}\n"
+              "\tpsi: {:.9f}",
+              fdmData.version, fdmData.padding, fdmData.longitude * degRad,
+              fdmData.latitude * degRad, fdmData.altitude, fdmData.agl, fdmData.phi,
+              fdmData.theta, fdmData.psi);
     //    control->WaitForNEDUpdate();
     //    auto pos = control->GetNED();
     //    auto gps = control->GetGPS();

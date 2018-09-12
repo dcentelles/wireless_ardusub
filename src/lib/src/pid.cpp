@@ -2,6 +2,7 @@
 #define _PID_SOURCE_
 
 #include <cmath>
+#include <exception>
 #include <iostream>
 #include <wireless_ardusub/pid.h>
 
@@ -54,6 +55,9 @@ double PIDImpl::calculate(double setpoint, double pv) {
   double Iout = _Ki * _integral;
 
   // Derivative term
+  if (_dt == 0.0)
+    std::cerr <<
+        "Impossible to create a PID regulator with a null loop interval time." << std::endl;
   double derivative = (error - _pre_error) / _dt;
   double Dout = _Kd * derivative;
 

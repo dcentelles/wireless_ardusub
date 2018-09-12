@@ -104,7 +104,7 @@ static double ned_x, ned_y, ned_z;
 static std::mutex attitude_mutex;
 static tfScalar g_yaw, g_pitch, g_roll;
 
-static PID heading_pid = PID(0.1, 100, -100, 0.1, 0.01, 0.5);
+PID pid = PID(0.1, 180, -180, 0.1, 0.01, 0);
 
 static ARDUSUB_NAV_MODE lastReceivedMode;
 
@@ -230,10 +230,8 @@ void holdChannelWork() {
 */
 
 int angleDistance(int alpha, int beta) {
-  int phi = std::abs(beta - alpha) %
-            360; // This is either the distance or 360 - distance
-  int distance = phi > 180 ? 360 - phi : phi;
-  return distance;
+  auto diff = beta - alpha;
+  return diff;
 }
 
 double getKeepHeadingDecrease(int ahdiff) {
@@ -668,46 +666,6 @@ void startWorkers() {
     }
   });
   poseWorker.detach();
-
-  std::thread uwsimPublisher([&]() {
-    bool world_ned_set = false;
-    tf::StampedTransform world_ned_tf, ned_rov_tf;
-    tf::TransformListener worldNEDListener;
-    while (1) {
-      if (world_ned_set) {
-        std::this_thread::sleep_for(chrono::milliseconds(20));
-        std::unique_lock<std::mutex> lock(ned_mutex);
-        ned_cond.wait(lock);
-        ned_rov_tf.setOrigin(tf::Vector3(ned_x, ned_y, ned_z));
-        ned_rov_tf.setRotation(tf::createQuaternionFromYaw(g_yaw));
-
-        tf::Transform wMv = world_ned_tf * ned_rov_tf;
-        tf::Vector3 position = wMv.getOrigin();
-        tf::Quaternion orientation = wMv.getRotation();
-        geometry_msgs::Pose msg;
-        msg.position.x = position.x();
-        msg.position.y = position.y();
-        msg.position.z = position.z();
-        msg.orientation.x = orientation.x();
-        msg.orientation.y = orientation.y();
-        msg.orientation.z = orientation.z();
-        msg.orientation.w = orientation.w();
-        pose_pub.publish(msg);
-      } else {
-        try {
-          worldNEDListener.waitForTransform("world", "local_origin_ned",
-                                            ros::Time(0), ros::Duration(1));
-          worldNEDListener.lookupTransform("world", "local_origin_ned",
-                                           ros::Time(0), world_ned_tf);
-          world_ned_set = true;
-        } catch (tf::TransformException &e) {
-          ROS_ERROR("Not able to lookup transform: %s", e.what());
-          world_ned_set = false;
-        };
-      }
-    }
-  });
-  uwsimPublisher.detach();
 }
 
 void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
@@ -732,6 +690,10 @@ void handleNewHUDData(const mavlink_vfr_hud_t &msg) {
   currentHROVMessage_updated = true;
   currentHROVMessage_mutex.unlock();
   currentHROVMessage_cond.notify_one();
+
+  currentHROVPose_mutex.lock();
+  currentHROVPose.heading = msg.heading;
+  currentHROVPose_mutex.unlock();
 }
 
 void handleNewNavigationData(const mavlink_attitude_t &attitude) {
@@ -959,7 +921,7 @@ int main(int argc, char **argv) {
   GeographicLib::Geocentric earth(GeographicLib::Constants::WGS84_a(),
                                   GeographicLib::Constants::WGS84_f());
 
-  double origin_lat = 39.993428, origin_lon = -0.068574, origin_alt = 0;
+  double origin_lat = 39.993117, origin_lon = -0.068812, origin_alt = 0;
   // double origin_alt = GeographicLib::Geoid::GEOIDTOELLIPSOID *
   // (*egm96_5)(origin_lat, origin_alt);
 
@@ -976,10 +938,6 @@ int main(int argc, char **argv) {
   control->SetHomeUpdatedCb([&](const mavlink_home_position_t &msg) {
 
     map_origin = {msg.latitude / 1e7, msg.longitude / 1e7, msg.altitude / 1e3};
-
-    //    localNED = GeographicLib::LocalCartesian(map_origin.x(),
-    //    map_origin.y(),
-    //                                             map_origin.z(), earth);
 
     double lat_error = map_origin.x() - origin_lat;
     double lon_error = map_origin.y() - origin_lon;
@@ -1006,22 +964,22 @@ int main(int argc, char **argv) {
     //    currentHROVMessage_mutex.unlock();
     //    currentHROVMessage_cond.notify_one();
 
-    currentHROVMessage_mutex.lock();
-    currentHROVMessageV2->SetX(msg.x * 100);
-    currentHROVMessageV2->SetY(msg.y * 100);
-    currentHROVMessageV2->SetZ(msg.z * 100);
-    currentHROVMessage_updated = true;
-    currentHROVMessage_mutex.unlock();
-    currentHROVMessage_cond.notify_one();
+//    currentHROVMessage_mutex.lock();
+//    currentHROVMessageV2->SetX(msg.x * 100);
+//    currentHROVMessageV2->SetY(msg.y * 100);
+//    currentHROVMessageV2->SetZ(msg.z * 100);
+//    currentHROVMessage_updated = true;
+//    currentHROVMessage_mutex.unlock();
+//    currentHROVMessage_cond.notify_one();
 
-    ned_mutex.lock();
+//    ned_mutex.lock();
 
-    ned_x = msg.x;
-    ned_y = msg.y;
-    ned_z = msg.z;
+//    ned_x = msg.x;
+//    ned_y = msg.y;
+//    ned_z = msg.z;
 
-    ned_cond.notify_all();
-    ned_mutex.unlock();
+//    ned_cond.notify_all();
+//    ned_mutex.unlock();
   });
 
   control->SetGlobalPositionInt([&](const mavlink_global_position_int_t &msg) {
@@ -1030,36 +988,79 @@ int main(int argc, char **argv) {
     longitude = msg.lon;
     gps_mutex.unlock();
 
-    //    ned_mutex.lock();
 
-    //    localNED.Forward(msg.lat / 1e7, msg.lon / 1e7, (msg.alt /
-    //    (double)1e3),
-    //                     ned_x, ned_y, ned_z);
-    //    ned_mutex.unlock();
+    double x,y,z;
+    localNED.Forward(msg.lat / 1e7, msg.lon / 1e7, (msg.alt / (double)1e3),
+                     x, y, z);
+    ned_mutex.lock();
+    ned_x = y;
+    ned_y = x;
+    ned_z = -z;
+    ned_mutex.unlock();
 
-    //    //    currentHROVMessage_mutex.lock();
-    //    //    currentHROVMessageV2->SetX(ned_x * 100);
-    //    //    currentHROVMessageV2->SetY(ned_y * 100);
-    //    //    // currentHROVMessageV2->SetZ(ned_z * 100);
-    //    //    currentHROVMessage_updated = true;
-    //    //    currentHROVMessage_mutex.unlock();
-    //    //    currentHROVMessage_cond.notify_one();
+    currentHROVMessage_mutex.lock();
+    currentHROVMessageV2->SetX(ned_x * 100);
+    currentHROVMessageV2->SetY(ned_y * 100);
+    currentHROVMessageV2->SetZ(ned_z * 100);
+    currentHROVMessage_updated = true;
+    currentHROVMessage_mutex.unlock();
+    currentHROVMessage_cond.notify_one();
 
-    //    Log->Info("NED:"
-    //              "\ttime_boot_ms: {}\n"
-    //              "\tned_x: {}\n"
-    //              "\tned_y: {}\n"
-    //              "\tted_z: {}\n",
-    //              msg.time_boot_ms, ned_x, ned_y, ned_z);
+    Log->Info("NED:"
+              "\ttime_boot_ms: {}\n"
+              "\tned_x: {}\n"
+              "\tned_y: {}\n"
+              "\tted_z: {}\n",
+              msg.time_boot_ms, ned_x, ned_y, ned_z);
 
   });
 
-  //  std::thread setHomeWorker([&]() {
-  //    while (true) {
-  //      control->SetHome(origin_lat, origin_lon, origin_alt);
-  //      std::this_thread::sleep_for(chrono::seconds(4));
-  //    }
-  //  });
+  std::thread setHomeWorker([&]() {
+    while (true) {
+      control->SetHome(origin_lat, origin_lon, origin_alt);
+      std::this_thread::sleep_for(chrono::seconds(10));
+    }
+  });
+
+  std::thread uwsimPublisher([&]() {
+    bool world_ned_set = false;
+    tf::StampedTransform world_ned_tf, ned_rov_tf;
+    tf::TransformListener worldNEDListener;
+    while (1) {
+      if (world_ned_set) {
+        std::this_thread::sleep_for(chrono::milliseconds(20));
+        std::unique_lock<std::mutex> lock(ned_mutex);
+        ned_cond.wait(lock);
+        ned_rov_tf.setOrigin(tf::Vector3(ned_x, ned_y, ned_z));
+        ned_rov_tf.setRotation(tf::createQuaternionFromYaw(g_yaw));
+
+        tf::Transform wMv = world_ned_tf * ned_rov_tf;
+        tf::Vector3 position = wMv.getOrigin();
+        tf::Quaternion orientation = wMv.getRotation();
+        geometry_msgs::Pose msg;
+        msg.position.x = position.x();
+        msg.position.y = position.y();
+        msg.position.z = position.z();
+        msg.orientation.x = orientation.x();
+        msg.orientation.y = orientation.y();
+        msg.orientation.z = orientation.z();
+        msg.orientation.w = orientation.w();
+        pose_pub.publish(msg);
+      } else {
+        try {
+          worldNEDListener.waitForTransform("world", "local_origin_ned",
+                                            ros::Time(0), ros::Duration(1));
+          worldNEDListener.lookupTransform("world", "local_origin_ned",
+                                           ros::Time(0), world_ned_tf);
+          world_ned_set = true;
+        } catch (tf::TransformException &e) {
+          ROS_ERROR("Not able to lookup transform: %s", e.what());
+          world_ned_set = false;
+        };
+      }
+    }
+  });
+  uwsimPublisher.detach();
 
   std::thread GPSInput([&]() {
     while (1) {
@@ -1113,6 +1114,9 @@ int main(int argc, char **argv) {
       gpsinput.lat = geodetic.x() * 1e7; // [degrees * 1e7]
       gpsinput.lon = geodetic.y() * 1e7; // [degrees * 1e7]
 
+      //      gpsinput.lat = 0; // geodetic.x() * 1e7; // [degrees * 1e7]
+      //      gpsinput.lon = 0; // geodetic.y() * 1e7; // [degrees * 1e7]
+
       // BY GPS_INPUT
       //      uint32_t IGNORE_VELOCITIES_AND_ACCURACY =
       //          (GPS_INPUT_IGNORE_FLAG_VEL_HORIZ |
@@ -1133,7 +1137,7 @@ int main(int argc, char **argv) {
       gpsinput.vdop = 1;
       gpsinput.satellites_visible = 10;
       gpsinput.ignore_flags = IGNORE_VELOCITIES_AND_ACCURACY;
-      // control->SendGPSInput(gpsinput);
+      control->SendGPSInput(gpsinput);
 
       Log->Info("Lat: {} ; Lon: {}", gpsinput.lat, gpsinput.lon);
       std::this_thread::sleep_for(std::chrono::milliseconds(250));
