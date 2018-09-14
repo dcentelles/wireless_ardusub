@@ -24,7 +24,6 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   dynamic_reconfigure
   image_utils_ros_msgs
-  mavros
   tf_conversions
 )
 
@@ -112,7 +111,6 @@ SET(${PROJECT_NAME}_INCLUDE_DIRS
     ${SRCPATH}lib/include
     modules
     ${${TELEROBOTICS_GIT}_INCLUDE_DIRS}
-    ${${MAVLINK_CPP_GIT}_INCLUDE_DIRS}
     )
 
 
@@ -129,40 +127,15 @@ SET(${PROJECT_NAME}_CPP_FILES
 add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
 #target_link_libraries(${PROJECT_NAME} ${TELEROBOTICS_GIT})
 
-SET(ROV_V1 rov_v1)
-SET(OP_V1 op_v1)
-SET(ROV_V2 rov_v2)
-SET(OP_V2 op_v2)
+
 SET(ROV_V3 rov_v3)
 SET(OP_V3 op_v3)
-SET(ROV_V4 rov_v4)
-SET(OP_V4 op_v4)
-
-add_executable (${ROV_V1} ${SRCPATH}main/control_v1/rov_control_v1.cpp)
-target_link_libraries(${ROV_V1} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES})
-add_executable (${OP_V1} ${SRCPATH}main/control_v1/operator_control_v1.cpp)
-target_link_libraries(${OP_V1} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES})
-
-add_executable (${OP_V2} ${SRCPATH}main/control_v2/operator_control_v2.cpp)
-target_link_libraries(${OP_V2} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES})
-add_dependencies(${OP_V2} ${PROJECT_NAME}_gencfg)
-add_executable (${ROV_V2} ${SRCPATH}main/control_v2/rov_control_v2.cpp)
-target_link_libraries(${ROV_V2} ${TELEROBOTICS_GIT} ${MAVLINK_CPP_GIT})
 
 add_executable (${OP_V3} ${SRCPATH}main/control_v3/operator_control_v3.cpp)
 target_link_libraries(${OP_V3} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES})
 add_dependencies(${OP_V3} ${PROJECT_NAME}_gencfg)
 add_executable (${ROV_V3} ${SRCPATH}main/control_v3/rov_control_v3.cpp)
-target_link_libraries(${ROV_V3} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${PROJECT_NAME})
-
-add_executable (NEDPublisher ${SRCPATH}main/debug_scripts/NEDPublisher.cpp)
-target_link_libraries(NEDPublisher ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
-
-add_executable (SITL_FDMReceiver ${SRCPATH}main/debug_scripts/SITL_FDMReceiver.cpp)
-target_link_libraries(SITL_FDMReceiver ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${TELEROBOTICS_GIT})
-
-add_executable (GPSInputTf ${SRCPATH}main/debug_scripts/GPSInputTf.cpp)
-target_link_libraries(GPSInputTf ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${TELEROBOTICS_GIT})
+target_link_libraries(${ROV_V3} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${PROJECT_NAME})
 
 add_executable (pid_0 ${SRCPATH}main/debug_scripts/pid_0.cpp)
 target_link_libraries(pid_0 ${PROJECT_NAME})
@@ -181,7 +154,6 @@ catkin_package(
    LIBRARIES
     ${PROJECT_NAME}
     ${${TELEROBOTICS_GIT}_LIBRARIES}
-    ${${MAVLINK_CPP_GIT}_LIBRARIES}
    INCLUDE_DIRS
     ${${PROJECT_NAME}_INCLUDE_DIRS}
    CATKIN_DEPENDS

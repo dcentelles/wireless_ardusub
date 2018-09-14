@@ -1,6 +1,3 @@
 [submodule "modules/telerobotics"]
 	path = modules/telerobotics
 	url = https://github.com/dcentelles/telerobotics.git
-[submodule "modules/mavlink_cpp"]
-	path = modules/mavlink_cpp
-	url = https://github.com/dcentelles/mavlink_cpp.git
