@@ -3,16 +3,23 @@
   <!-- start the teleop app -->
   <arg name="namespace" default="/merbots/wrov/rov"/>
   <arg name="log2Console" default="true"/>
-  <arg name="port" default="/dev/ttyUSB0"/>
-  <!--to use service set port to "service" -->
-  <arg name="dccommsId" default="rov"/>
+  <arg name="port" default="service"/>
+  <!--to use real set port to "/dev/ttyUSB0" -->
+  <arg name="dccommsId" default="g500_s100"/>
   <!-- used when port == "service" -->
   <arg name="log2File" default="false"/>
   <arg name="launchComms" default="true"/>
-  <arg name="launchImage" default="false"/>
-  <arg name="image" default="/usb_cam/image_raw"/>
+  <arg name="launchImage" default="true"/>
+  <arg name="image" default="/uwsim/camera1"/>
   <arg name="imageTransport" default="raw"/>
   <arg name="encodedImage" default="encoded_image"/>
+  <arg name="simrobot" default="true"/>
+  <arg name="enableSafety" default="false" />
+  <arg name="enableRviz" default="false" />
+  <arg name="enableShadders" default="true" />
+  <arg name="sceneXml" default="netsim_cirs.xml" />
+  <arg name="enableUWSim" default="true" />
+
   <group ns="$(arg namespace)">
     <node if="$(arg launchComms)" pkg="wireless_ardusub" type="rov_v3" name="rov_v3" output="screen" required="true">
       <param name="port" value="$(arg port)" type="string"/>
@@ -29,4 +36,26 @@
       <arg name="namespace" value="$(arg namespace)"/>
     </include>
   </group>
+
+  <group if="$(arg simrobot)">
+	<include file="$(find cola2_g500)/launch/sim_g500_start.launch">
+		<arg name="enableRviz" value="false"/>
+		<arg name="enableSafety" value="$(arg enableSafety)"/>
+	</include>
+  </group>
+
+
+  <remap from="/g500_sitl/odom" to="/g500/ros_odom_to_pat" />
+
+  <!-- Run UWSim -->
+  <group if="$(arg enableUWSim)">
+        <node if="$(arg enableShadders)" name="uwsim" pkg="uwsim" type="uwsim" args=" --configfile $(arg sceneXml) --dataPath $(find uwsim)/data/scenes/" respawn="false"/>
+        <node unless="$(arg enableShadders)" name="uwsim" pkg="uwsim" type="uwsim" args=" --configfile $(arg sceneXml) --dataPath $(find uwsim)/data/scenes/ --disableShaders" respawn="false"/>
+  </group>
+
+  <!-- Run RViz -->
+  <group if="$(arg enableRviz)">
+	<param name="robot_description" textfile="$(find cola2_g500)/data/model/g500.urdf" />
+	<node pkg="rviz" type="rviz" name="rviz" args="-d $(find cola2_g500)/scenes/rviz_g500_sim.rviz"/>
+</group>
 </launch>

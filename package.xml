@@ -52,7 +52,12 @@
   <build_depend>dynamic_reconfigure</build_depend>
   <build_depend>image_utils_ros_msgs</build_depend>
   <build_depend>tf_conversions</build_depend>
+  <build_depend>cola2_msgs</build_depend>
+  <build_depend>auv_msgs</build_depend>
+  <build_depend>std_srvs</build_depend>
 
+  <run_depend>cola2_msgs</run_depend>
+  <run_depend>auv_msgs</run_depend>
   <run_depend>roscpp</run_depend>
   <run_depend>rospy</run_depend>
   <run_depend>std_msgs</run_depend>
@@ -64,6 +69,7 @@
   <run_depend>dynamic_reconfigure</run_depend>
    <run_depend>image_utils_ros_msgs</run_depend>
    <run_depend>tf_conversions</run_depend>
+   <run_depend>std_srvs</run_depend>
 
     <run_depend>joy</run_depend>
   

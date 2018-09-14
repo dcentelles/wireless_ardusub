@@ -8,6 +8,8 @@
 #include <image_utils_ros_msgs/EncodedImg.h>
 #include <image_utils_ros_msgs/EncodingConfig.h>
 #include <ros/ros.h>
+#include <std_srvs/Empty.h> //For /cola2_control/disable_goto service
+#include <tf/transform_listener.h> //for position relative to ROV frame
 #include <sensor_msgs/Imu.h>
 #include <telerobotics/HROVMessageV2.h>
 #include <telerobotics/OperatorMessageV2.h>
@@ -17,9 +19,22 @@
 #include <wireless_ardusub/Constants.h>
 #include <wireless_ardusub/utils.hpp>
 
-#include <mavros/frame_tf.h>
 #include <tf_conversions/tf_eigen.h>
 #include <wireless_ardusub/pid.h>
+
+// Merbots
+#include <merbots_whrov_msgs/hrov_settings.h>
+#include <merbots_whrov_msgs/movement.h>
+#include <merbots_whrov_msgs/position.h>
+// EndMerbots
+
+// cola2
+#include <cola2_msgs/Goto.h> //For /cola2_control/enable_goto service
+// end cola2
+
+// auv_msgs
+#include <auv_msgs/NavSts.h>
+// end auv_msgs
 
 using namespace cpplogging;
 using namespace std::chrono_literals;
@@ -36,6 +51,10 @@ struct Params {
 struct HROVPose {
   double yaw, pitch, roll, Z, X, Y, heading;
 };
+
+static ros::ServiceClient cola2Control, cola2ControlCancel;
+static ros::Subscriber cola2Navigation_sub;
+static auv_msgs::NavStsPtr navData;
 
 static LoggerPtr Log;
 static Params params;
@@ -66,7 +85,6 @@ static std::thread holdChannelWorker;
 
 static ros::Subscriber encodedImage_sub;
 static ros::Publisher encodingConfig_pub;
-static ros::Publisher setenupos_pub;
 static dccomms::Ptr<ROV> commsNode;
 
 static image_utils_ros_msgs::EncodingConfig emsg;
@@ -161,13 +179,13 @@ double arduSubXYR(double per) { return per / 0.1; }
 double arduSubZ(double per) { return (per + 100) / 0.2; }
 
 void stopRobot() {
-  //control->SetManualControl(x, y, z, r);
+  // control->SetManualControl(x, y, z, r);
 }
 
 void moveYaw(double per) {
   if (lastOrder) {
-    //rVel = ceil(arduSubXYR(per));
-    //control->SetManualControl(xVel, yVel, zVel, rVel);
+    // rVel = ceil(arduSubXYR(per));
+    // control->SetManualControl(xVel, yVel, zVel, rVel);
   }
 }
 
@@ -267,8 +285,28 @@ void sendGoToLocalNED(double x, double y, double z, double yaw) {
   ned_tf.setOrigin(ned_position);
   ned_tf.setRotation(ned_orientation.normalize());
 
+  cola2_msgs::Goto srv;
 
-//  control->SendSetPositionTargetLocalNED(sp);
+  srv.request.yaw = yaw;
+  srv.request.position.x = x;
+  srv.request.position.y = y;
+  srv.request.position.z = z;
+
+  srv.request.blocking = true;
+  srv.request.keep_position = true;
+  srv.request.position_tolerance.x = 0.4;
+  srv.request.position_tolerance.y = 0.4;
+  srv.request.position_tolerance.z = 0.4;
+  srv.request.altitude_mode = false;
+  srv.request.priority = 10;
+  srv.request.reference = srv.request.REFERENCE_NED;
+
+  if (cola2Control.call(srv)) {
+    Log->Info("Service call success. Result: {}",
+              srv.response.success ? "success" : "failed");
+  } else {
+    Log->Error("Service call failed");
+  }
 }
 
 void handleNewOrder() {
@@ -352,11 +390,11 @@ void arm(bool v) {
   // firmware
   // that adds an offset to the NED position when rearming.
   if (v) {
-    //control->Arm(true);
+    // control->Arm(true);
   } else {
     // control->Arm(false);
     stopRobot();
-    //control->SetFlyMode(FLY_MODE_R::MANUAL);
+    // control->SetFlyMode(FLY_MODE_R::MANUAL);
   }
   armed = v;
 }
@@ -403,7 +441,7 @@ void operatorMsgParserWork() {
           Log->Warn("Heartbeat lost! Considering communication lost and "
                     "launching pose recovery");
         }
-        //control->SetFlyMode(FLY_MODE_R::GUIDED);
+        // control->SetFlyMode(FLY_MODE_R::GUIDED);
         communication_lost = true;
       }
     }
@@ -421,24 +459,24 @@ void operatorMsgParserWork() {
         switch (lastReceivedMode) {
         case ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD:
           modeName = "DEPTH HOLD";
-          //control->SetDepthHoldMode();
+          // control->SetDepthHoldMode();
           break;
         case ARDUSUB_NAV_MODE::NAV_STABILIZE:
           modeName = "STABILIZE";
-          //control->SetStabilizeMode();
+          // control->SetStabilizeMode();
           break;
         case ARDUSUB_NAV_MODE::NAV_MANUAL:
           modeName = "MANUAL";
-          //control->SetManualMode();
+          // control->SetManualMode();
           break;
         case ARDUSUB_NAV_MODE::NAV_POS_HOLD:
           modeName = "POS HOLD";
-          //control->SetFlyMode(FLY_MODE_R::POS_HOLD);
+          // control->SetFlyMode(FLY_MODE_R::POS_HOLD);
           break;
         case ARDUSUB_NAV_MODE::NAV_GUIDED:
           modeName = "GUIDED";
           //  control->EnableManualControl(false);
-          //control->SetFlyMode(FLY_MODE_R::GUIDED);
+          // control->SetFlyMode(FLY_MODE_R::GUIDED);
           break;
         default:
           break;
@@ -475,7 +513,7 @@ void operatorMsgParserWork() {
         //          xVel, yVel, zVel, rVel, lastOrder->Arm() ? "true" : "false",
         //          modeName);
 
-        //control->SetManualControl(xVel, yVel, zVel, rVel);
+        // control->SetManualControl(xVel, yVel, zVel, rVel);
       }
     } else {
       handleNewOrder();
@@ -555,6 +593,45 @@ void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
   }
 }
 
+void handleNewNavigationData(const auv_msgs::NavSts::ConstPtr &msg) {
+  // Convert from m to dm
+  auto depth = msg->position.depth * 100;
+  auto north = msg->position.north * 100;
+  auto east = msg->position.east * 100;
+
+  attitude_mutex.lock();
+  g_yaw = msg->orientation.yaw;
+  g_pitch = msg->orientation.pitch;
+  g_roll = msg->orientation.roll;
+  attitude_mutex.unlock();
+
+  Log->Info("yaw: {} ; pitch: {} ; roll: {}", g_yaw, g_pitch, g_roll);
+  int rx, ry;
+  double heading;
+  rx = telerobotics::utils::GetDiscreteYaw(g_roll);
+  ry = telerobotics::utils::GetDiscreteYaw(g_pitch);
+  heading = telerobotics::utils::GetDiscreteYaw(g_yaw);
+
+  rx = rx > 180 ? -(360 - rx) : rx;
+  ry = ry > 180 ? -(360 - ry) : ry;
+
+  heading = heading * (180. / M_PI);
+  if (heading < 0)
+    heading = heading + 360;
+
+  currentHROVMessage_mutex.lock();
+  currentHROVMessageV2->SetRoll(rx);
+  currentHROVMessageV2->SetPitch(ry);
+
+  currentHROVMessageV2->SetHeading(static_cast<uint16_t>(std::round(heading)));
+  currentHROVMessageV2->SetZ(depth);
+  currentHROVMessageV2->SetX(north);
+  currentHROVMessageV2->SetY(east);
+  currentHROVMessage_updated = true;
+  currentHROVMessage_mutex.unlock();
+  currentHROVMessage_cond.notify_one();
+}
+
 void initROSInterface(int argc, char **argv) {
   ros::NodeHandle nh;
   encodedImage_sub = nh.subscribe<image_utils_ros_msgs::EncodedImg>(
@@ -562,12 +639,15 @@ void initROSInterface(int argc, char **argv) {
   encodingConfig_pub =
       nh.advertise<image_utils_ros_msgs::EncodingConfig>("encoding_config", 1);
 
-  setenupos_pub = nh.advertise<geometry_msgs::PoseStamped>(
-      "/mavros/setpoint_position/local", 1);
+  cola2ControlCancel =
+      nh.serviceClient<std_srvs::Empty>("/cola2_control/disable_goto");
+  cola2Control =
+      nh.serviceClient<cola2_msgs::Goto>("/cola2_control/enable_goto");
+  cola2Navigation_sub =
+      nh.subscribe<auv_msgs::NavSts>("/cola2_navigation/nav_sts_hz", 1,
+                                     boost::bind(handleNewNavigationData, _1));
 
   pose_pub = nh.advertise<geometry_msgs::Pose>("/debug/pose", 1);
-
-
 }
 
 int getParams() {
@@ -646,7 +726,7 @@ int main(int argc, char **argv) {
     Log->SetLogFormatter(
         std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));
     Log->LogToFile("rov_v3_control");
-    //control->LogToFile("rov_v3_gcs");
+    // control->LogToFile("rov_v3_gcs");
     commsNode->LogToFile("rov_v3_comms_node");
     commsNode->SetLogFormatter(
         std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));

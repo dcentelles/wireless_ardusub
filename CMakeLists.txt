@@ -25,6 +25,8 @@ find_package(catkin REQUIRED COMPONENTS
   dynamic_reconfigure
   image_utils_ros_msgs
   tf_conversions
+  cola2_msgs
+  auv_msgs
 )
 
 #find_package(catkin REQUIRED dynamic_reconfigure)
@@ -160,6 +162,7 @@ catkin_package(
     roscpp
     rospy
     std_msgs
+    std_srvs
     actionlib_msgs
     message_runtime
     merbots_whrov_msgs
@@ -167,6 +170,8 @@ catkin_package(
     sensor_msgs
     sensor_msgs
     tf_conversions
+    cola2_msgs
+    auv_msgs
 )
 
 roslaunch_add_file_check(launch)
