@@ -8,13 +8,13 @@
 #include <image_utils_ros_msgs/EncodedImg.h>
 #include <image_utils_ros_msgs/EncodingConfig.h>
 #include <ros/ros.h>
-#include <std_srvs/Empty.h> //For /cola2_control/disable_goto service
-#include <tf/transform_listener.h> //for position relative to ROV frame
 #include <sensor_msgs/Imu.h>
+#include <std_srvs/Empty.h> //For /cola2_control/disable_goto service
 #include <telerobotics/HROVMessageV2.h>
 #include <telerobotics/OperatorMessageV2.h>
 #include <telerobotics/ROV.h>
 #include <tf/transform_broadcaster.h>
+#include <tf/transform_listener.h> //for position relative to ROV frame
 #include <tf/transform_listener.h>
 #include <wireless_ardusub/Constants.h>
 #include <wireless_ardusub/utils.hpp>
@@ -36,6 +36,8 @@
 #include <auv_msgs/NavSts.h>
 // end auv_msgs
 
+#include <nav_msgs/Odometry.h>
+
 using namespace cpplogging;
 using namespace std::chrono_literals;
 using namespace telerobotics;
@@ -53,7 +55,7 @@ struct HROVPose {
 };
 
 static ros::ServiceClient cola2Control, cola2ControlCancel;
-static ros::Subscriber cola2Navigation_sub;
+static ros::Subscriber cola2Navigation_sub, sitlOdom_sub;
 static auv_msgs::NavStsPtr navData;
 
 static LoggerPtr Log;
@@ -276,8 +278,18 @@ void cancelLastOrder() {
   lock.unlock();
 }
 
-void sendGoToLocalNED(double x, double y, double z, double yaw) {
+void cancelCurrentMoveOrder() {
+  Log->Info("Cancel current order of movement");
+  std_srvs::Empty srv;
+  if (cola2ControlCancel.call(srv)) {
+    Log->Info("Last order cancelled");
+  } else {
+    Log->Info("Failed to call service /cola2_control/disable_goto");
+  }
+}
 
+void sendGoToLocalNED(double x, double y, double z, double yaw) {
+  cancelCurrentMoveOrder();
   tf::Quaternion ned_orientation;
   ned_orientation.setRPY(0, 0, yaw);
   tf::Vector3 ned_position(x, y, z);
@@ -292,7 +304,7 @@ void sendGoToLocalNED(double x, double y, double z, double yaw) {
   srv.request.position.y = y;
   srv.request.position.z = z;
 
-  srv.request.blocking = true;
+  srv.request.blocking = false;
   srv.request.keep_position = true;
   srv.request.position_tolerance.x = 0.4;
   srv.request.position_tolerance.y = 0.4;
@@ -594,23 +606,72 @@ void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
 }
 
 void handleNewNavigationData(const auv_msgs::NavSts::ConstPtr &msg) {
+  //  ned_mutex.lock();
+  //  // Convert from m to dm
+  //  ned_z = msg->position.depth * 100;
+  //  ned_x = msg->position.north * 100;
+  //  ned_y = msg->position.east * 100;
+
+  //  attitude_mutex.lock();
+  //  g_yaw = msg->orientation.yaw;
+  //  g_pitch = msg->orientation.pitch;
+  //  g_roll = msg->orientation.roll;
+  //  attitude_mutex.unlock();
+  //  ned_mutex.unlock();
+  //  ned_cond.notify_all();
+
+  //  Log->Info("yaw: {} ; pitch: {} ; roll: {}", g_yaw, g_pitch, g_roll);
+  //  int rx, ry;
+  //  double heading;
+  //  rx = telerobotics::utils::GetDiscreteYaw(g_roll);
+  //  ry = telerobotics::utils::GetDiscreteYaw(g_pitch);
+  //  heading = g_yaw;
+
+  //  rx = rx > 180 ? -(360 - rx) : rx;
+  //  ry = ry > 180 ? -(360 - ry) : ry;
+
+  //  heading = heading * (180. / M_PI);
+  //  if (heading < 0)
+  //    heading = heading + 360;
+
+  //  currentHROVMessage_mutex.lock();
+  //  currentHROVMessageV2->SetRoll(rx);
+  //  currentHROVMessageV2->SetPitch(ry);
+
+  //  currentHROVMessageV2->SetHeading(static_cast<uint16_t>(std::round(heading)));
+  //  currentHROVMessageV2->SetZ(ned_z);
+  //  currentHROVMessageV2->SetX(ned_x);
+  //  currentHROVMessageV2->SetY(ned_y);
+  //  currentHROVMessage_updated = true;
+  //  currentHROVMessage_mutex.unlock();
+  //  currentHROVMessage_cond.notify_one();
+}
+
+void handleSitlOdom(const nav_msgs::Odometry::ConstPtr &msg) {
+
+  ned_mutex.lock();
   // Convert from m to dm
-  auto depth = msg->position.depth * 100;
-  auto north = msg->position.north * 100;
-  auto east = msg->position.east * 100;
+  ned_z = msg->pose.pose.position.z * 100;
+  ned_x = msg->pose.pose.position.x * 100;
+  ned_y = msg->pose.pose.position.y * 100;
+
+  tf::Quaternion rot(msg->pose.pose.orientation.x, msg->pose.pose.orientation.y,
+                     msg->pose.pose.orientation.z,
+                     msg->pose.pose.orientation.w);
 
   attitude_mutex.lock();
-  g_yaw = msg->orientation.yaw;
-  g_pitch = msg->orientation.pitch;
-  g_roll = msg->orientation.roll;
+
+  tf::Matrix3x3(rot).getRPY(g_roll, g_pitch, g_yaw);
   attitude_mutex.unlock();
+  ned_mutex.unlock();
+  ned_cond.notify_all();
 
   Log->Info("yaw: {} ; pitch: {} ; roll: {}", g_yaw, g_pitch, g_roll);
   int rx, ry;
   double heading;
   rx = telerobotics::utils::GetDiscreteYaw(g_roll);
   ry = telerobotics::utils::GetDiscreteYaw(g_pitch);
-  heading = telerobotics::utils::GetDiscreteYaw(g_yaw);
+  heading = g_yaw;
 
   rx = rx > 180 ? -(360 - rx) : rx;
   ry = ry > 180 ? -(360 - ry) : ry;
@@ -624,9 +685,9 @@ void handleNewNavigationData(const auv_msgs::NavSts::ConstPtr &msg) {
   currentHROVMessageV2->SetPitch(ry);
 
   currentHROVMessageV2->SetHeading(static_cast<uint16_t>(std::round(heading)));
-  currentHROVMessageV2->SetZ(depth);
-  currentHROVMessageV2->SetX(north);
-  currentHROVMessageV2->SetY(east);
+  currentHROVMessageV2->SetZ(ned_z);
+  currentHROVMessageV2->SetX(ned_x);
+  currentHROVMessageV2->SetY(ned_y);
   currentHROVMessage_updated = true;
   currentHROVMessage_mutex.unlock();
   currentHROVMessage_cond.notify_one();
@@ -646,6 +707,9 @@ void initROSInterface(int argc, char **argv) {
   cola2Navigation_sub =
       nh.subscribe<auv_msgs::NavSts>("/cola2_navigation/nav_sts_hz", 1,
                                      boost::bind(handleNewNavigationData, _1));
+
+  cola2Navigation_sub = nh.subscribe<nav_msgs::Odometry>(
+      "/g500/ros_odom_to_pat", 1, boost::bind(handleSitlOdom, _1));
 
   pose_pub = nh.advertise<geometry_msgs::Pose>("/debug/pose", 1);
 }
@@ -776,6 +840,7 @@ int main(int argc, char **argv) {
   commsNode->Start();
 
   currentHROVMessageV2->Ready(true);
+  currentHROVMessageV2->SetNavMode(ARDUSUB_NAV_MODE::NAV_GUIDED);
   commsNode->SetCurrentTxState(currentHROVMessageV2->GetBuffer(),
                                currentHROVMessageV2->GetMsgSize());
 

@@ -33,8 +33,9 @@
      <node if="$(arg launchHMI)" pkg="whrov_hmi" type="whrov_hmi" name="whrov_hmi" output="screen" required="true"/>
   </group>
 
-  <!--<node respawn="true" pkg="wireless_ardusub" type="goto_range" name="goto_range" output="screen">
-  </node> -->
+  <remap from="/g500_sitl/odom" to="/g500/ros_odom_to_pat" />
 
+  <include file="$(find uwsim)/data/scenes/launch/netsim_cirs.launch">
+  </include>
 
 </launch>

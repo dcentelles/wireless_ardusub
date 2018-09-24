@@ -347,7 +347,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
   _encodedImage_pub =
       _nh.advertise<image_utils_ros_msgs::EncodedImg>("encoded_image", 1);
 
-  _pose_pub = _nh.advertise<geometry_msgs::Pose>("/bluerov2/pose", 1);
+  _pose_pub = _nh.advertise<geometry_msgs::Pose>("/g500_comms/pose", 1);
 
   _currentOperatorMessage = OperatorMessageV2::Build();
   _currentHROVMessage = HROVMessageV2::BuildHROVMessageV2();

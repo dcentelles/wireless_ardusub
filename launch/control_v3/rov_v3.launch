@@ -41,21 +41,10 @@
 	<include file="$(find cola2_g500)/launch/sim_g500_start.launch">
 		<arg name="enableRviz" value="false"/>
 		<arg name="enableSafety" value="$(arg enableSafety)"/>
+		<arg name="enableJoystick" value="false"/>
 	</include>
   </group>
 
 
-  <remap from="/g500_sitl/odom" to="/g500/ros_odom_to_pat" />
 
-  <!-- Run UWSim -->
-  <group if="$(arg enableUWSim)">
-        <node if="$(arg enableShadders)" name="uwsim" pkg="uwsim" type="uwsim" args=" --configfile $(arg sceneXml) --dataPath $(find uwsim)/data/scenes/" respawn="false"/>
-        <node unless="$(arg enableShadders)" name="uwsim" pkg="uwsim" type="uwsim" args=" --configfile $(arg sceneXml) --dataPath $(find uwsim)/data/scenes/ --disableShaders" respawn="false"/>
-  </group>
-
-  <!-- Run RViz -->
-  <group if="$(arg enableRviz)">
-	<param name="robot_description" textfile="$(find cola2_g500)/data/model/g500.urdf" />
-	<node pkg="rviz" type="rviz" name="rviz" args="-d $(find cola2_g500)/scenes/rviz_g500_sim.rviz"/>
-</group>
 </launch>
