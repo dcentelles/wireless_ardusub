@@ -306,9 +306,9 @@ void sendGoToLocalNED(double x, double y, double z, double yaw) {
 
   srv.request.blocking = false;
   srv.request.keep_position = true;
-  srv.request.position_tolerance.x = 0.4;
-  srv.request.position_tolerance.y = 0.4;
-  srv.request.position_tolerance.z = 0.4;
+  srv.request.position_tolerance.x = 0.2;
+  srv.request.position_tolerance.y = 0.2;
+  srv.request.position_tolerance.z = 0.2;
   srv.request.altitude_mode = false;
   srv.request.priority = 10;
   srv.request.reference = srv.request.REFERENCE_NED;
@@ -606,49 +606,49 @@ void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
 }
 
 void handleNewNavigationData(const auv_msgs::NavSts::ConstPtr &msg) {
-  //  ned_mutex.lock();
-  //  // Convert from m to dm
-  //  ned_z = msg->position.depth * 100;
-  //  ned_x = msg->position.north * 100;
-  //  ned_y = msg->position.east * 100;
+    ned_mutex.lock();
+    // Convert from m to dm
+    ned_z = msg->position.depth * 100;
+    ned_x = msg->position.north * 100;
+    ned_y = msg->position.east * 100;
 
-  //  attitude_mutex.lock();
-  //  g_yaw = msg->orientation.yaw;
-  //  g_pitch = msg->orientation.pitch;
-  //  g_roll = msg->orientation.roll;
-  //  attitude_mutex.unlock();
-  //  ned_mutex.unlock();
-  //  ned_cond.notify_all();
+    attitude_mutex.lock();
+    g_yaw = msg->orientation.yaw;
+    g_pitch = msg->orientation.pitch;
+    g_roll = msg->orientation.roll;
+    attitude_mutex.unlock();
+    ned_mutex.unlock();
+    ned_cond.notify_all();
 
-  //  Log->Info("yaw: {} ; pitch: {} ; roll: {}", g_yaw, g_pitch, g_roll);
-  //  int rx, ry;
-  //  double heading;
-  //  rx = telerobotics::utils::GetDiscreteYaw(g_roll);
-  //  ry = telerobotics::utils::GetDiscreteYaw(g_pitch);
-  //  heading = g_yaw;
+    Log->Info("yaw: {} ; pitch: {} ; roll: {}", g_yaw, g_pitch, g_roll);
+    int rx, ry;
+    double heading;
+    rx = telerobotics::utils::GetDiscreteYaw(g_roll);
+    ry = telerobotics::utils::GetDiscreteYaw(g_pitch);
+    heading = g_yaw;
 
-  //  rx = rx > 180 ? -(360 - rx) : rx;
-  //  ry = ry > 180 ? -(360 - ry) : ry;
+    rx = rx > 180 ? -(360 - rx) : rx;
+    ry = ry > 180 ? -(360 - ry) : ry;
 
-  //  heading = heading * (180. / M_PI);
-  //  if (heading < 0)
-  //    heading = heading + 360;
+    heading = heading * (180. / M_PI);
+    if (heading < 0)
+      heading = heading + 360;
 
-  //  currentHROVMessage_mutex.lock();
-  //  currentHROVMessageV2->SetRoll(rx);
-  //  currentHROVMessageV2->SetPitch(ry);
+    currentHROVMessage_mutex.lock();
+    currentHROVMessageV2->SetRoll(rx);
+    currentHROVMessageV2->SetPitch(ry);
 
-  //  currentHROVMessageV2->SetHeading(static_cast<uint16_t>(std::round(heading)));
-  //  currentHROVMessageV2->SetZ(ned_z);
-  //  currentHROVMessageV2->SetX(ned_x);
-  //  currentHROVMessageV2->SetY(ned_y);
-  //  currentHROVMessage_updated = true;
-  //  currentHROVMessage_mutex.unlock();
-  //  currentHROVMessage_cond.notify_one();
+    currentHROVMessageV2->SetHeading(static_cast<uint16_t>(std::round(heading)));
+    currentHROVMessageV2->SetZ(ned_z);
+    currentHROVMessageV2->SetX(ned_x);
+    currentHROVMessageV2->SetY(ned_y);
+    currentHROVMessage_updated = true;
+    currentHROVMessage_mutex.unlock();
+    currentHROVMessage_cond.notify_one();
 }
 
 void handleSitlOdom(const nav_msgs::Odometry::ConstPtr &msg) {
-
+/*
   ned_mutex.lock();
   // Convert from m to dm
   ned_z = msg->pose.pose.position.z * 100;
@@ -690,7 +690,7 @@ void handleSitlOdom(const nav_msgs::Odometry::ConstPtr &msg) {
   currentHROVMessageV2->SetY(ned_y);
   currentHROVMessage_updated = true;
   currentHROVMessage_mutex.unlock();
-  currentHROVMessage_cond.notify_one();
+  currentHROVMessage_cond.notify_one();*/
 }
 
 void initROSInterface(int argc, char **argv) {
@@ -708,7 +708,7 @@ void initROSInterface(int argc, char **argv) {
       nh.subscribe<auv_msgs::NavSts>("/cola2_navigation/nav_sts_hz", 1,
                                      boost::bind(handleNewNavigationData, _1));
 
-  cola2Navigation_sub = nh.subscribe<nav_msgs::Odometry>(
+  sitlOdom_sub = nh.subscribe<nav_msgs::Odometry>(
       "/g500/ros_odom_to_pat", 1, boost::bind(handleSitlOdom, _1));
 
   pose_pub = nh.advertise<geometry_msgs::Pose>("/debug/pose", 1);
