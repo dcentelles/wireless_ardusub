@@ -159,8 +159,10 @@ void notifyROVReady() {
   currentHROVMessage_mutex.unlock();
 }
 
+// from -127,127  to -100,100
 double getJoyAxisNormalized(int x) { return 200. / 256 * x; }
-double arduSubXYR(double per) { return per / 0.1; }
+// from -100,100 to -1000,1000
+double arduSubXYR(double per) { return per * 10; }
 double arduSubZ(double per) { return (per + 100) / 0.2; }
 
 void stopRobot() {
@@ -217,52 +219,38 @@ void holdChannelWork() {
   notifyROVReady();
 }
 
-/**
-   Length (angular) of a shortest way between two angles.
-  It will be in range [0, 180].
+double angleDistance(double src, double dst) {
+  //returns values from -180 to 180
+  while (src > 360)
+    src -= 360;
+  while (dst > 360)
+    dst -= 360;
+  double diff = dst - src;
+  double adiff = std::abs(diff);
 
- private int distance(int alpha, int beta) {
-     int phi = Math.abs(beta - alpha) % 360;       // This is either the
- distance or 360 - distance
-     int distance = phi > 180 ? 360 - phi : phi;
-     return distance;
- }
-*/
+  // src: 0   --> dst: 190 --> distance: 170 --> I --> -170
+  // src: 190 --> dst: 0   --> distance: 170 --> D --> 170
+  // src: 350 --> dst: 10  --> distance: 20  --> D --> 20
+  // src: 10 --> dst: 350  --> distance: 20 ---> I --> -20
+  double distance;
+  if (adiff > 180) {
+    distance = adiff - 360;
+  } else {
+    distance = adiff;
+  }
+  if (diff < 0)
+    distance *= -1;
 
-int angleDistance(int alpha, int beta) {
-  auto diff = beta - alpha;
-  return diff;
-}
-
-double getKeepHeadingDecrease(int ahdiff) {
-  uint32_t diff = abs(ahdiff);
-  double m = diff / 180. * 100;
-  return m;
+  return distance;
 }
 
 void keepHeadingIteration(void) {
-  int currentHeading = std::round(currentHROVPose.heading);
-  int ahdiff = angleDistance(currentHeading, desiredOrientation);
+  double currentHeading = g_yaw * (180. / M_PI);
+  if (currentHeading < 0)
+    currentHeading = currentHeading + 360;
 
-  bool right;
-  if (ahdiff + currentHeading % 360 == desiredOrientation)
-    right = false;
-  else
-    right = true;
-
-  double vel = getKeepHeadingDecrease(ahdiff);
-  if (ahdiff > 1) {
-    if (right) {
-      Log->Debug("Turn left");
-      moveYaw(-vel);
-    } else {
-      Log->Debug("Turn right");
-      moveYaw(vel);
-    }
-  } else {
-    Log->Debug("do not turn");
-    moveYaw(0);
-  }
+  // current heading between 0 and 360
+  double ahdiff = angleDistance(currentHeading, desiredOrientation);
 }
 
 void keepHeadingWorkLoop() {
@@ -288,7 +276,7 @@ void keepHeadingWorkLoop() {
     }
 
     keepHeadingIteration();
-    this_thread::sleep_for(chrono::milliseconds(200));
+    this_thread::sleep_for(chrono::milliseconds(100));
   }
 }
 
@@ -596,11 +584,10 @@ void operatorMsgParserWork() {
         if (!keepOrientation)
           rVel = ceil(arduSubXYR(rNorm));
 
-        //      Log->Info(
-        //          "Manual control: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ;
-        //          Mode: {}",
-        //          xVel, yVel, zVel, rVel, lastOrder->Arm() ? "true" : "false",
-        //          modeName);
+        Log->Info("Manual control: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; "
+                  "Mode  : {} ",
+                  xVel, yVel, zVel, rVel, lastOrder->Arm() ? "true" : "false",
+                  modeName);
 
         control->SetManualControl(xVel, yVel, zVel, rVel);
       }
@@ -690,10 +677,6 @@ void handleNewHUDData(const mavlink_vfr_hud_t &msg) {
   currentHROVMessage_updated = true;
   currentHROVMessage_mutex.unlock();
   currentHROVMessage_cond.notify_one();
-
-  currentHROVPose_mutex.lock();
-  currentHROVPose.heading = msg.heading;
-  currentHROVPose_mutex.unlock();
 }
 
 void handleNewNavigationData(const mavlink_attitude_t &attitude) {
@@ -964,22 +947,22 @@ int main(int argc, char **argv) {
     //    currentHROVMessage_mutex.unlock();
     //    currentHROVMessage_cond.notify_one();
 
-//    currentHROVMessage_mutex.lock();
-//    currentHROVMessageV2->SetX(msg.x * 100);
-//    currentHROVMessageV2->SetY(msg.y * 100);
-//    currentHROVMessageV2->SetZ(msg.z * 100);
-//    currentHROVMessage_updated = true;
-//    currentHROVMessage_mutex.unlock();
-//    currentHROVMessage_cond.notify_one();
+    currentHROVMessage_mutex.lock();
+    currentHROVMessageV2->SetX(msg.x * 100);
+    currentHROVMessageV2->SetY(msg.y * 100);
+    currentHROVMessageV2->SetZ(msg.z * 100);
+    currentHROVMessage_updated = true;
+    currentHROVMessage_mutex.unlock();
+    currentHROVMessage_cond.notify_one();
 
-//    ned_mutex.lock();
+    ned_mutex.lock();
 
-//    ned_x = msg.x;
-//    ned_y = msg.y;
-//    ned_z = msg.z;
+    ned_x = msg.x;
+    ned_y = msg.y;
+    ned_z = msg.z;
 
-//    ned_cond.notify_all();
-//    ned_mutex.unlock();
+    ned_cond.notify_all();
+    ned_mutex.unlock();
   });
 
   control->SetGlobalPositionInt([&](const mavlink_global_position_int_t &msg) {
@@ -988,30 +971,30 @@ int main(int argc, char **argv) {
     longitude = msg.lon;
     gps_mutex.unlock();
 
+    //    double x,y,z;
+    //    localNED.Forward(msg.lat / 1e7, msg.lon / 1e7, (msg.alt /
+    //    (double)1e3),
+    //                     x, y, z);
+    //    ned_mutex.lock();
+    //    ned_x = y;
+    //    ned_y = x;
+    //    ned_z = -z;
+    //    ned_mutex.unlock();
 
-    double x,y,z;
-    localNED.Forward(msg.lat / 1e7, msg.lon / 1e7, (msg.alt / (double)1e3),
-                     x, y, z);
-    ned_mutex.lock();
-    ned_x = y;
-    ned_y = x;
-    ned_z = -z;
-    ned_mutex.unlock();
+    //    currentHROVMessage_mutex.lock();
+    //    currentHROVMessageV2->SetX(ned_x * 100);
+    //    currentHROVMessageV2->SetY(ned_y * 100);
+    //    currentHROVMessageV2->SetZ(ned_z * 100);
+    //    currentHROVMessage_updated = true;
+    //    currentHROVMessage_mutex.unlock();
+    //    currentHROVMessage_cond.notify_one();
 
-    currentHROVMessage_mutex.lock();
-    currentHROVMessageV2->SetX(ned_x * 100);
-    currentHROVMessageV2->SetY(ned_y * 100);
-    currentHROVMessageV2->SetZ(ned_z * 100);
-    currentHROVMessage_updated = true;
-    currentHROVMessage_mutex.unlock();
-    currentHROVMessage_cond.notify_one();
-
-    Log->Info("NED:"
-              "\ttime_boot_ms: {}\n"
-              "\tned_x: {}\n"
-              "\tned_y: {}\n"
-              "\tted_z: {}\n",
-              msg.time_boot_ms, ned_x, ned_y, ned_z);
+    //    Log->Info("NED:"
+    //              "\ttime_boot_ms: {}\n"
+    //              "\tned_x: {}\n"
+    //              "\tned_y: {}\n"
+    //              "\tted_z: {}\n",
+    //              msg.time_boot_ms, ned_x, ned_y, ned_z);
 
   });
 
@@ -1137,7 +1120,7 @@ int main(int argc, char **argv) {
       gpsinput.vdop = 1;
       gpsinput.satellites_visible = 10;
       gpsinput.ignore_flags = IGNORE_VELOCITIES_AND_ACCURACY;
-      control->SendGPSInput(gpsinput);
+      // control->SendGPSInput(gpsinput);
 
       Log->Info("Lat: {} ; Lon: {}", gpsinput.lat, gpsinput.lon);
       std::this_thread::sleep_for(std::chrono::milliseconds(250));
