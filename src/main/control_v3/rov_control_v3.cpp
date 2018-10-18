@@ -75,7 +75,7 @@ static dccomms::Ptr<ROV> commsNode;
 static image_utils_ros_msgs::EncodingConfig emsg;
 static int lastImageSize = -1;
 
-static uint16_t desiredOrientation;
+static int desiredOrientation;
 static bool keepOrientation;
 static std::mutex keepOrientation_mutex;
 static std::condition_variable keepOrientation_cond;
@@ -104,7 +104,10 @@ static double ned_x, ned_y, ned_z;
 static std::mutex attitude_mutex;
 static tfScalar g_yaw, g_pitch, g_roll;
 
-PID pid = PID(0.1, 180, -180, 0.1, 0.01, 0);
+PID yawPID = PID(0.1, 100, -100, 1, 0.05, 0.5),
+    xPID = PID(0.2, 100, -100, 0.1, 0.01, 0),
+    yPID = PID(0.2, 100, -100, 0.1, 0.01, 0),
+    zPID = PID(0.2, 100, -100, 0.1, 0.01, 0);
 
 static ARDUSUB_NAV_MODE lastReceivedMode;
 
@@ -220,7 +223,7 @@ void holdChannelWork() {
 }
 
 double angleDistance(double src, double dst) {
-  //returns values from -180 to 180
+  // returns values from -180 to 180
   while (src > 360)
     src -= 360;
   while (dst > 360)
@@ -250,7 +253,19 @@ void keepHeadingIteration(void) {
     currentHeading = currentHeading + 360;
 
   // current heading between 0 and 360
-  double ahdiff = angleDistance(currentHeading, desiredOrientation);
+  double diff = angleDistance(currentHeading, desiredOrientation);
+  // diff in [-180,180]
+
+  // per = 100/180 * d [-100,100]
+  double per = 100. / 180 * diff;
+
+  double vel = yawPID.calculate(0, -1 * per);
+
+  Log->Info("****** GG: {} -- {} -- {} -- {} -- {}", diff, currentHeading, desiredOrientation, per, vel);
+
+//  if(vel >0) vel = 50;
+//  else vel = -50;
+  moveYaw(vel);
 }
 
 void keepHeadingWorkLoop() {
@@ -279,6 +294,21 @@ void keepHeadingWorkLoop() {
     this_thread::sleep_for(chrono::milliseconds(100));
   }
 }
+
+void setKeepOrientation(int v)
+{
+    desiredOrientation = v;
+    keepOrientation = true;
+    keepOrientation_cond.notify_all();
+}
+
+
+void enableKeepOrientation(bool e)
+{
+    keepOrientation = e;
+    keepOrientation_cond.notify_all();
+}
+
 
 static bool guidedMode = false;
 static bool goToMission = false;
@@ -451,6 +481,7 @@ void handleNewOrder() {
         Log->Info("GoTo: {} ; {} ; {} ; {} ({})", x2, y2, z2, heading, yaw);
 
         sendGoToLocalNED(x2, y2, z2, yaw);
+        setKeepOrientation(heading);
         break;
       }
       }
@@ -495,11 +526,12 @@ void messageSenderWork() {
     auto heading = currentHROVMessageV2->GetHeading();
     auto navMode = (int)currentHROVMessageV2->GetNavMode();
     auto armed = currentHROVMessageV2->Armed();
-    Log->Info("OWN STATE - OID: {} ; CC: {} ; RDY: {} ; HD: {} ; NAV: {} ;"
-              "ARMED: {} ; x:y:z: "
-              "{} : {} : {}",
-              oid, cancelled ? 1 : 0, ready ? 1 : 0, heading, navMode,
-              armed ? 1 : 0, x, y, altitude);
+    //    Log->Info("OWN STATE - OID: {} ; CC: {} ; RDY: {} ; HD: {} ; NAV: {}
+    //    ;"
+    //              "ARMED: {} ; x:y:z: "
+    //              "{} : {} : {}",
+    //              oid, cancelled ? 1 : 0, ready ? 1 : 0, heading, navMode,
+    //              armed ? 1 : 0, x, y, altitude);
     currentHROVMessage_updated = false;
   }
 }
@@ -561,10 +593,12 @@ void operatorMsgParserWork() {
         //        if (lastReceivedMode != ARDUSUB_NAV_MODE::NAV_GUIDED) {
         //          control->EnableManualControl(true);
         //        }
-        Log->Info(
-            "Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
-            lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
-            lastOrder->GetR(), lastOrder->Arm() ? "true" : "false", modeName);
+        //        Log->Info(
+        //            "Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ;
+        //            Mode: {}",
+        //            lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
+        //            lastOrder->GetR(), lastOrder->Arm() ? "true" : "false",
+        //            modeName);
         int x = lastOrder->GetX();
         int y = lastOrder->GetY();
         int z = lastOrder->GetZ();
@@ -584,10 +618,12 @@ void operatorMsgParserWork() {
         if (!keepOrientation)
           rVel = ceil(arduSubXYR(rNorm));
 
-        Log->Info("Manual control: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; "
-                  "Mode  : {} ",
-                  xVel, yVel, zVel, rVel, lastOrder->Arm() ? "true" : "false",
-                  modeName);
+        //        Log->Info("Manual control: X: {} ; Y: {} ; Z: {} ; R: {} ;
+        //        Arm: {} ; "
+        //                  "Mode  : {} ",
+        //                  xVel, yVel, zVel, rVel, lastOrder->Arm() ? "true" :
+        //                  "false",
+        //                  modeName);
 
         control->SetManualControl(xVel, yVel, zVel, rVel);
       }
@@ -660,7 +696,7 @@ void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
     lastImageSize =
         emsg.max_size <= msg->img.size() ? emsg.max_size : msg->img.size();
     if (lastImageSize > 0) {
-      Log->Info("TX IMG {}", lastImageSize);
+      //Log->Info("TX IMG {}", lastImageSize);
       commsNode->SendImage((void *)msg->img.data(), lastImageSize);
     }
   } else {
@@ -686,7 +722,7 @@ void handleNewNavigationData(const mavlink_attitude_t &attitude) {
   g_roll = attitude.roll;
   attitude_mutex.unlock();
 
-  Log->Info("yaw: {} ; pitch: {} ; roll: {}", g_yaw, g_pitch, g_roll);
+  //Log->Info("yaw: {} ; pitch: {} ; roll: {}", g_yaw, g_pitch, g_roll);
   int rx, ry, rz;
   rx = telerobotics::utils::GetDiscreteYaw(g_roll);
   ry = telerobotics::utils::GetDiscreteYaw(g_pitch);
@@ -875,7 +911,7 @@ int main(int argc, char **argv) {
   commsNode->SetLogLevel(LogLevel::info);
 
   commsNode->SetOrdersReceivedCallback([](ROV &receiver) {
-    Log->Info("Orders received!");
+    //Log->Info("Orders received!");
     uint8_t state[300];
     receiver.GetCurrentRxState(state);
 
@@ -885,7 +921,7 @@ int main(int argc, char **argv) {
     currentOperatorMessage_updated = true;
     currentOperatorMessage_cond.notify_one();
 
-    Log->Info("Orders updated");
+    //Log->Info("Orders updated");
   });
   commsNode->Start();
 
@@ -931,15 +967,16 @@ int main(int argc, char **argv) {
   });
 
   control->SetLocalPositionNEDCb([&](const mavlink_local_position_ned_t &msg) {
-    Log->Info("LOCAL_POSITION_NED:"
-              "\ttime_boot_ms: {} ; "
-              "x: {} ; "
-              "y: {} ; "
-              "z: {} ; "
-              "vx: {} ; "
-              "vy: {} ; "
-              "vz: {} ; ",
-              msg.time_boot_ms, msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz);
+    //    Log->Info("LOCAL_POSITION_NED:"
+    //              "\ttime_boot_ms: {} ; "
+    //              "x: {} ; "
+    //              "y: {} ; "
+    //              "z: {} ; "
+    //              "vx: {} ; "
+    //              "vy: {} ; "
+    //              "vz: {} ; ",
+    //              msg.time_boot_ms, msg.x, msg.y, msg.z, msg.vx, msg.vy,
+    //              msg.vz);
 
     //    currentHROVMessage_mutex.lock();
     //    currentHROVMessageV2->SetZ(msg.z * 100);
@@ -1122,7 +1159,7 @@ int main(int argc, char **argv) {
       gpsinput.ignore_flags = IGNORE_VELOCITIES_AND_ACCURACY;
       // control->SendGPSInput(gpsinput);
 
-      Log->Info("Lat: {} ; Lon: {}", gpsinput.lat, gpsinput.lon);
+      //Log->Info("Lat: {} ; Lon: {}", gpsinput.lat, gpsinput.lon);
       std::this_thread::sleep_for(std::chrono::milliseconds(250));
     }
   });
