@@ -261,10 +261,8 @@ void keepHeadingIteration(void) {
 
   double vel = yawPID.calculate(0, -1 * per);
 
-  Log->Info("****** GG: {} -- {} -- {} -- {} -- {}", diff, currentHeading, desiredOrientation, per, vel);
-
-//  if(vel >0) vel = 50;
-//  else vel = -50;
+  Log->Info("GG: {} -- {} -- {} -- {} -- {}", diff, currentHeading,
+            desiredOrientation, per, vel);
   moveYaw(vel);
 }
 
@@ -295,20 +293,16 @@ void keepHeadingWorkLoop() {
   }
 }
 
-void setKeepOrientation(int v)
-{
-    desiredOrientation = v;
-    keepOrientation = true;
-    keepOrientation_cond.notify_all();
+void setKeepOrientation(int v) {
+  desiredOrientation = v;
+  keepOrientation = true;
+  keepOrientation_cond.notify_all();
 }
 
-
-void enableKeepOrientation(bool e)
-{
-    keepOrientation = e;
-    keepOrientation_cond.notify_all();
+void enableKeepOrientation(bool e) {
+  keepOrientation = e;
+  keepOrientation_cond.notify_all();
 }
-
 
 static bool guidedMode = false;
 static bool goToMission = false;
@@ -526,12 +520,11 @@ void messageSenderWork() {
     auto heading = currentHROVMessageV2->GetHeading();
     auto navMode = (int)currentHROVMessageV2->GetNavMode();
     auto armed = currentHROVMessageV2->Armed();
-    //    Log->Info("OWN STATE - OID: {} ; CC: {} ; RDY: {} ; HD: {} ; NAV: {}
-    //    ;"
-    //              "ARMED: {} ; x:y:z: "
-    //              "{} : {} : {}",
-    //              oid, cancelled ? 1 : 0, ready ? 1 : 0, heading, navMode,
-    //              armed ? 1 : 0, x, y, altitude);
+    Log->Info("OWN STATE - OID: {} ; CC: {} ; RDY: {} ; HD: {} ; NAV: {} ; "
+              "ARMED: {} ; x:y:z: "
+              "{} : {} : {}",
+              oid, cancelled ? 1 : 0, ready ? 1 : 0, heading, navMode,
+              armed ? 1 : 0, x, y, altitude);
     currentHROVMessage_updated = false;
   }
 }
@@ -593,12 +586,10 @@ void operatorMsgParserWork() {
         //        if (lastReceivedMode != ARDUSUB_NAV_MODE::NAV_GUIDED) {
         //          control->EnableManualControl(true);
         //        }
-        //        Log->Info(
-        //            "Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ;
-        //            Mode: {}",
-        //            lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
-        //            lastOrder->GetR(), lastOrder->Arm() ? "true" : "false",
-        //            modeName);
+        Log->Info(
+            "Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
+            lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
+            lastOrder->GetR(), lastOrder->Arm() ? "true" : "false", modeName);
         int x = lastOrder->GetX();
         int y = lastOrder->GetY();
         int z = lastOrder->GetZ();
@@ -696,7 +687,7 @@ void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
     lastImageSize =
         emsg.max_size <= msg->img.size() ? emsg.max_size : msg->img.size();
     if (lastImageSize > 0) {
-      //Log->Info("TX IMG {}", lastImageSize);
+      // Log->Info("TX IMG {}", lastImageSize);
       commsNode->SendImage((void *)msg->img.data(), lastImageSize);
     }
   } else {
@@ -722,7 +713,7 @@ void handleNewNavigationData(const mavlink_attitude_t &attitude) {
   g_roll = attitude.roll;
   attitude_mutex.unlock();
 
-  //Log->Info("yaw: {} ; pitch: {} ; roll: {}", g_yaw, g_pitch, g_roll);
+  // Log->Info("yaw: {} ; pitch: {} ; roll: {}", g_yaw, g_pitch, g_roll);
   int rx, ry, rz;
   rx = telerobotics::utils::GetDiscreteYaw(g_roll);
   ry = telerobotics::utils::GetDiscreteYaw(g_pitch);
@@ -911,7 +902,7 @@ int main(int argc, char **argv) {
   commsNode->SetLogLevel(LogLevel::info);
 
   commsNode->SetOrdersReceivedCallback([](ROV &receiver) {
-    //Log->Info("Orders received!");
+    Log->Info("Orders received!");
     uint8_t state[300];
     receiver.GetCurrentRxState(state);
 
@@ -921,7 +912,7 @@ int main(int argc, char **argv) {
     currentOperatorMessage_updated = true;
     currentOperatorMessage_cond.notify_one();
 
-    //Log->Info("Orders updated");
+    // Log->Info("Orders updated");
   });
   commsNode->Start();
 
@@ -1088,9 +1079,9 @@ int main(int argc, char **argv) {
       mavlink_gps_input_t gpsinput;
       try {
         auto now = ros::Time::now();
-        listener.waitForTransform("local_origin_ned", "rov", now,
+        listener.waitForTransform("local_origin_ned", "rov_vision", now,
                                   ros::Duration(1.0));
-        listener.lookupTransform("local_origin_ned", "rov", ros::Time(0),
+        listener.lookupTransform("local_origin_ned", "rov_vision", ros::Time(0),
                                  ned_origin_rov_tf);
 
       } catch (tf::TransformException ex) {
@@ -1112,6 +1103,8 @@ int main(int argc, char **argv) {
       if (heading < 0)
         heading = heading + 360;
 
+      // Uncomment the lines below to take estimated position directly from
+      // vision
       //      currentHROVMessage_mutex.lock();
       //      currentHROVMessageV2->SetX(position.x() * 100);
       //      currentHROVMessageV2->SetY(position.y() * 100);
@@ -1134,16 +1127,6 @@ int main(int argc, char **argv) {
       gpsinput.lat = geodetic.x() * 1e7; // [degrees * 1e7]
       gpsinput.lon = geodetic.y() * 1e7; // [degrees * 1e7]
 
-      //      gpsinput.lat = 0; // geodetic.x() * 1e7; // [degrees * 1e7]
-      //      gpsinput.lon = 0; // geodetic.y() * 1e7; // [degrees * 1e7]
-
-      // BY GPS_INPUT
-      //      uint32_t IGNORE_VELOCITIES_AND_ACCURACY =
-      //          (GPS_INPUT_IGNORE_FLAG_VEL_HORIZ |
-      //           GPS_INPUT_IGNORE_FLAG_VEL_VERT |
-      //           GPS_INPUT_IGNORE_FLAG_SPEED_ACCURACY |
-      //           GPS_INPUT_IGNORE_FLAG_HORIZONTAL_ACCURACY |
-      //           GPS_INPUT_IGNORE_FLAG_VERTICAL_ACCURACY);
       uint32_t IGNORE_VELOCITIES_AND_ACCURACY =
           (GPS_INPUT_IGNORE_FLAG_ALT | GPS_INPUT_IGNORE_FLAG_VEL_HORIZ |
            GPS_INPUT_IGNORE_FLAG_VEL_VERT |
@@ -1159,7 +1142,7 @@ int main(int argc, char **argv) {
       gpsinput.ignore_flags = IGNORE_VELOCITIES_AND_ACCURACY;
       // control->SendGPSInput(gpsinput);
 
-      //Log->Info("Lat: {} ; Lon: {}", gpsinput.lat, gpsinput.lon);
+      // Log->Info("Lat: {} ; Lon: {}", gpsinput.lat, gpsinput.lon);
       std::this_thread::sleep_for(std::chrono::milliseconds(250));
     }
   });
