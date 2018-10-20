@@ -687,11 +687,11 @@ void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
     lastImageSize =
         emsg.max_size <= msg->img.size() ? emsg.max_size : msg->img.size();
     if (lastImageSize > 0) {
-      // Log->Info("TX IMG {}", lastImageSize);
       commsNode->SendImage((void *)msg->img.data(), lastImageSize);
     }
   } else {
     if (lastImageSize != emsg.max_size) {
+      Log->Warn("TX CANCEL LAST IMAGE {} {} {}", lastImageSize, emsg.max_size, msg->img.size());
       commsNode->CancelLastImage();
     }
   }

@@ -259,7 +259,7 @@ void OperatorController::StartWorkers() {
         _lastSeq = seq;
       }
       _node->SetTxState(_currentOperatorMessage->GetBuffer(),
-                        _currentHROVMessage->GetMsgSize());
+                        _currentOperatorMessage->GetMsgSize());
       _currentOperatorMessage_updated = false;
     }
   });
