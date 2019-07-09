@@ -10,6 +10,7 @@
 #include <ros/ros.h>
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_listener.h>
+#include <tf2_ros/static_transform_broadcaster.h>
 #include <thread>
 #include <wireless_ardusub/pid.h>
 
@@ -67,7 +68,7 @@ void saturate(const double &max, const double &x, const double &y,
 
 void GetLinearVel(const double &diffx, const double &diffy, const double &diffz,
                   double &vx, double &vy, double &vz) {
-  double mod = std::sqrt(vx * vx + vy * vy + vz * vz);
+  double mod = std::sqrt(diffx * diffx + diffy * diffy + diffz * diffz);
   double vel = vPID.calculate(0, mod);
   saturate(vel, diffx, diffy, diffz, vx, vy, vz);
   double m = 100 / 3.;
@@ -96,29 +97,61 @@ int main(int argc, char **argv) {
   control->EnableGPSMock(false);
   control->SetManualControl(0, 0, 0, 0);
   control->EnableManualControl(true);
-  control->SetDepthHoldMode();
   control->Start();
   control->Arm(true);
 
   tf::TransformListener listener;
+  static tf2_ros::StaticTransformBroadcaster static_broadcaster;
+  geometry_msgs::TransformStamped static_transformStamped;
+  std::vector<geometry_msgs::TransformStamped> static_transforms;
 
   ros::Rate rate(10);
 
-  tf::StampedTransform nedMrov, nedMtarget, rovMtarget;
+  tf::StampedTransform nedMrov, nedMtarget, rovMtarget, cameraMrov;
   tf::Transform rovMned;
+
+  while (1) {
+    try {
+      listener.lookupTransform("bluerov2_camera", "sitl", ros::Time(0),
+                               cameraMrov);
+      static_transformStamped.header.stamp = ros::Time::now();
+      static_transformStamped.header.frame_id = "camera";
+      static_transformStamped.child_frame_id = "erov";
+      static_transformStamped.transform.translation.x =
+          cameraMrov.getOrigin().getX();
+      static_transformStamped.transform.translation.y =
+          cameraMrov.getOrigin().getY();
+      static_transformStamped.transform.translation.z =
+          cameraMrov.getOrigin().getZ();
+      static_transformStamped.transform.rotation.x =
+          cameraMrov.getRotation().x();
+      static_transformStamped.transform.rotation.y =
+          cameraMrov.getRotation().y();
+      static_transformStamped.transform.rotation.z =
+          cameraMrov.getRotation().z();
+      static_transformStamped.transform.rotation.w =
+          cameraMrov.getRotation().w();
+      static_transforms.push_back(static_transformStamped);
+      break;
+    } catch (tf::TransformException &ex) {
+      log->Warn("TF: {}", ex.what());
+    }
+  }
+  static_broadcaster.sendTransform(static_transforms);
   while (ros::ok()) {
     try {
       listener.lookupTransform("local_origin_ned", "sitl", ros::Time(0),
                                nedMrov);
       listener.lookupTransform("local_origin_ned", "bluerov2_ghost",
                                ros::Time(0), nedMtarget);
-      listener.lookupTransform("sitl", "bluerov2_ghost", ros::Time(0),
+      listener.lookupTransform("erov", "bluerov2_ghost", ros::Time(0),
                                rovMtarget);
     } catch (tf::TransformException &ex) {
       log->Warn("TF: {}", ex.what());
       continue;
     }
     control->Arm(true);
+    //control->SetDepthHoldMode();
 
     rovMned = nedMrov.inverse();
     tf::Vector3 rovTned = rovMned.getOrigin();
