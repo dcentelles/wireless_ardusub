@@ -105,6 +105,9 @@ OperatorController::OperatorController(ros::NodeHandle &nh) : _nh(nh) {
   control->SetManualControl(0, 0, 0, 0);
   control->EnableManualControl(true);
   control->Start();
+
+  _controlState.arm = false;
+  _controlState.mode = NAV_MANUAL;
 }
 
 void OperatorController::ConfigCallback(
@@ -176,7 +179,7 @@ void OperatorController::Loop() {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         continue;
       }
-      control->SetFlyMode(FLY_MODE_R::STABILIZE);
+      control->SetFlyMode(FLY_MODE_R::MANUAL);
       control->Arm(true);
 
       rovMned = nedMrov.inverse();
