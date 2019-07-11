@@ -14,6 +14,7 @@ public:
   PIDImpl(double dt, double max, double min, double Kp, double Kd, double Ki);
   ~PIDImpl();
   double calculate(double setpoint, double pv);
+  void Reset();
 
 private:
   double _dt;
@@ -32,6 +33,13 @@ PID::PID(double dt, double max, double min, double Kp, double Kd, double Ki) {
 double PID::calculate(double setpoint, double pv) {
   return pimpl->calculate(setpoint, pv);
 }
+
+void PID::Reset() { pimpl->Reset(); }
+void PIDImpl::Reset() {
+  _integral = 0;
+  _pre_error = 0;
+}
+
 PID::~PID() { delete pimpl; }
 
 /**
@@ -56,8 +64,9 @@ double PIDImpl::calculate(double setpoint, double pv) {
 
   // Derivative term
   if (_dt == 0.0)
-    std::cerr <<
-        "Impossible to create a PID regulator with a null loop interval time." << std::endl;
+    std::cerr << "Impossible to create a PID regulator with a null loop "
+                 "interval time."
+              << std::endl;
   double derivative = (error - _pre_error) / _dt;
   double Dout = _Kd * derivative;
 
@@ -77,5 +86,5 @@ double PIDImpl::calculate(double setpoint, double pv) {
 }
 
 PIDImpl::~PIDImpl() {}
-}
+} // namespace wireless_ardusub
 #endif
