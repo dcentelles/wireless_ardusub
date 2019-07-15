@@ -173,6 +173,9 @@ target_link_libraries(goto_range ${catkin_LIBRARIES} ${TELEROBOTICS_GIT})
 add_executable (csetpoint ${SRCPATH}main/debug_scripts/csetpoint.cpp)
 target_link_libraries(csetpoint ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${PROJECT_NAME})
 
+add_executable (tfToPosePublisher ${SRCPATH}main/debug_scripts/TfToPosePublisher.cpp)
+target_link_libraries(tfToPosePublisher ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${PROJECT_NAME})
+
 install(TARGETS ${ROVA}
         LIBRARY DESTINATION "lib"
         RUNTIME DESTINATION "bin"
