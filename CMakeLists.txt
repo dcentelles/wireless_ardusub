@@ -176,6 +176,9 @@ target_link_libraries(csetpoint ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${PROJECT
 add_executable (tfToPosePublisher ${SRCPATH}main/debug_scripts/TfToPosePublisher.cpp)
 target_link_libraries(tfToPosePublisher ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${PROJECT_NAME})
 
+add_executable (tfToEkf ${SRCPATH}main/debug_scripts/tfToEkf.cpp)
+target_link_libraries(tfToEkf ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${PROJECT_NAME})
+
 install(TARGETS ${ROVA}
         LIBRARY DESTINATION "lib"
         RUNTIME DESTINATION "bin"

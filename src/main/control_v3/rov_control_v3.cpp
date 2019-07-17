@@ -162,11 +162,12 @@ void notifyROVReady() {
   currentHROVMessage_mutex.unlock();
 }
 
+double kk = 0.5;
 // from -127,127  to -100,100
 double getJoyAxisNormalized(int x) { return 200. / 256 * x; }
 // from -100,100 to -1000,1000
-double arduSubXYR(double per) { return per * 10; }
-double arduSubZ(double per) { return (per + 100) / 0.2; }
+double arduSubXYR(double per) { return per * kk * 10; }
+double arduSubZ(double per) { return (per * kk + 100) / 0.2; }
 
 void stopRobot() {
   int x = ceil(arduSubXYR(0));
@@ -561,11 +562,11 @@ void operatorMsgParserWork() {
         switch (lastReceivedMode) {
         case ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD:
           modeName = "DEPTH HOLD";
-          control->SetDepthHoldMode();
+          //control->SetDepthHoldMode();
           break;
         case ARDUSUB_NAV_MODE::NAV_STABILIZE:
           modeName = "STABILIZE";
-          control->SetStabilizeMode();
+          //control->SetStabilizeMode();
           break;
         case ARDUSUB_NAV_MODE::NAV_MANUAL:
           modeName = "MANUAL";
@@ -573,12 +574,12 @@ void operatorMsgParserWork() {
           break;
         case ARDUSUB_NAV_MODE::NAV_POS_HOLD:
           modeName = "POS HOLD";
-          control->SetFlyMode(FLY_MODE_R::POS_HOLD);
+          //control->SetFlyMode(FLY_MODE_R::POS_HOLD);
           break;
         case ARDUSUB_NAV_MODE::NAV_GUIDED:
           modeName = "GUIDED";
           //  control->EnableManualControl(false);
-          control->SetFlyMode(FLY_MODE_R::GUIDED);
+          //control->SetFlyMode(FLY_MODE_R::GUIDED);
           break;
         default:
           break;

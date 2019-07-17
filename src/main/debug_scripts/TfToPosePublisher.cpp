@@ -62,7 +62,7 @@ int main(int argc, char **argv) {
 
   while (ros::ok()) {
     try {
-      listener.lookupTransform("world", "erov", ros::Time(0), wMrov);
+      listener.lookupTransform("world", "erov_ekf", ros::Time(0), wMrov);
     } catch (tf::TransformException &ex) {
       log->Warn("TF: {}", ex.what());
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
