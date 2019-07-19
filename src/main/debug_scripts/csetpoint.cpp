@@ -52,7 +52,7 @@ private:
   tf::Transform rovMned;
   std::shared_ptr<GCSv1> control;
 
-  wireless_ardusub::PID yawPID = wireless_ardusub::PID(0.1, 3.14, -3.14, 0.5, 1,
+  wireless_ardusub::PID yawPID = wireless_ardusub::PID(0.1, 3.14, -3.14, 0.1, 0.5,
                                                        0.05),
                         vPID = wireless_ardusub::PID(0.1, 3, -3, 0.5, 1, 0.05);
 
@@ -118,33 +118,6 @@ void OperatorController::ConfigCallback(
 
 void OperatorController::Start() {
   _mainLoop = std::thread([this]() {
-    while (1) {
-      try {
-        listener.lookupTransform("bluerov2_camera", "sitl", ros::Time(0),
-                                 cameraMrov);
-        static_transformStamped.header.stamp = ros::Time::now();
-        static_transformStamped.header.frame_id = "camera";
-        static_transformStamped.child_frame_id = "erov";
-        static_transformStamped.transform.translation.x =
-            cameraMrov.getOrigin().getX();
-        static_transformStamped.transform.translation.y =
-            cameraMrov.getOrigin().getY();
-        static_transformStamped.transform.translation.z =
-            cameraMrov.getOrigin().getZ();
-        static_transformStamped.transform.rotation.x =
-            cameraMrov.getRotation().x();
-        static_transformStamped.transform.rotation.y =
-            cameraMrov.getRotation().y();
-        static_transformStamped.transform.rotation.z =
-            cameraMrov.getRotation().z();
-        static_transformStamped.transform.rotation.w =
-            cameraMrov.getRotation().w();
-        static_transforms.push_back(static_transformStamped);
-        break;
-      } catch (tf::TransformException &ex) {
-        Warn("TF: {}", ex.what());
-      }
-    }
     Loop();
   });
 }
@@ -167,7 +140,7 @@ void OperatorController::Loop() {
         manual = false;
       }
       try {
-        listener.lookupTransform("local_origin_ned", "sitl", ros::Time(0),
+        listener.lookupTransform("local_origin_ned", "hil", ros::Time(0),
                                  nedMrov);
         listener.lookupTransform("local_origin_ned", "bluerov2_ghost",
                                  ros::Time(0), nedMtarget);
@@ -183,16 +156,11 @@ void OperatorController::Loop() {
       control->Arm(true);
 
       rovMned = nedMrov.inverse();
-      tf::Vector3 rovTned = rovMned.getOrigin();
-      tf::Quaternion rovRned = rovMned.getRotation();
-
       tf::Vector3 rovTtarget = rovMtarget.getOrigin();
       tf::Quaternion rovRtarget = rovMtarget.getRotation();
 
       tf::Vector3 nedTrov = nedMrov.getOrigin();
-      tf::Quaternion nedRrov = nedMrov.getRotation();
       tf::Vector3 nedTtarget = nedMtarget.getOrigin();
-      tf::Quaternion nedRtarget = nedMtarget.getRotation();
 
       double vx, vy, vz;
       double vTlpX = rovTtarget.getX(), vTlpY = rovTtarget.getY(),
@@ -204,7 +172,7 @@ void OperatorController::Loop() {
       double mr = 100 / 3.14;
       rv = mr * rv;
 
-      double baseZ = -40;
+      double baseZ = -5;
       double newZ = vz + baseZ;
       auto x = ceil(ArduSubXYR(vx));
       auto y = ceil(ArduSubXYR(vy));
