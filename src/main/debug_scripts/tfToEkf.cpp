@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
   auto log = CreateLogger("GCS");
   log->SetLogLevel(debug);
   log->FlushLogOn(debug);
-  log->LogToFile("/home/irs/naiffilter.log");
+  //log->LogToFile("/home/irs/naiffilter.log");
 
   ros::init(argc, argv, "tfToEkf");
   ros::NodeHandle nh;
@@ -102,10 +102,8 @@ int main(int argc, char **argv) {
 
   std::list<tf::StampedTransform> fwindow;
 
-  tf::Vector3 wTrov, auxT, lastNaifT;
-  tf::Quaternion wRrov;
-  double lastNaifRoll, lastNaifPitch, lastNaifYaw, naifRoll, naifPitch, naifYaw,
-      roll, pitch, yaw;
+  tf::Vector3 wTrov, auxT, lastT, lastNaifT;
+  tf::Quaternion wRrov, auxR, lastR, lastNaifR;
 
   dccomms::Timer pubTimer, logTimer;
 
@@ -127,7 +125,7 @@ int main(int argc, char **argv) {
       continue;
 
     auxT = wMrov.getOrigin();
-    wMrov.getBasis().getRPY(roll, pitch, yaw, 2);
+    auxR = wMrov.getRotation();
 
     pubTimer.Reset();
 
@@ -140,10 +138,10 @@ int main(int argc, char **argv) {
     ekfPub.publish(ekfInputMsg);
 
     if (first) {
-      lastNaifT = auxT;
-      lastNaifRoll = roll;
-      lastNaifPitch = pitch;
-      lastNaifYaw = yaw;
+      lastR = auxR;
+      lastT = auxT;
+      lastNaifT = lastT;
+      lastNaifR = lastR;
       first = false;
     }
 
@@ -154,9 +152,10 @@ int main(int argc, char **argv) {
     wTrov[1] = deltaB * lastNaifT[1] + delta * auxT[1];
     wTrov[2] = deltaB * lastNaifT[2] + delta * auxT[2];
 
-    naifRoll = deltaB * lastNaifRoll + delta * roll;
-    naifPitch = deltaB * lastNaifPitch + delta * pitch;
-    naifYaw = deltaB * lastNaifYaw + delta * yaw;
+    wRrov.setX(deltaB * lastNaifR.getX() + delta * auxR.getX());
+    wRrov.setY(deltaB * lastNaifR.getY() + delta * auxR.getY());
+    wRrov.setZ(deltaB * lastNaifR.getZ() + delta * auxR.getZ());
+    wRrov.setW(deltaB * lastNaifR.getW() + delta * auxR.getW());
 
     log->Info("{} {} {} -- {} {} {} ", auxT[0], auxT[1], auxT[2], wTrov[0],
               wTrov[1], wTrov[2]);
@@ -164,12 +163,12 @@ int main(int argc, char **argv) {
     lastNaifT[0] = wTrov[0];
     lastNaifT[1] = wTrov[1];
     lastNaifT[2] = wTrov[2];
-    lastNaifRoll = naifRoll;
-    lastNaifPitch = naifPitch;
-    lastNaifYaw = naifYaw;
+    lastNaifR.setX(wRrov.getX());
+    lastNaifR.setY(wRrov.getY());
+    lastNaifR.setZ(wRrov.getZ());
+    lastNaifR.setW(wRrov.getW());
 
     wMrov.setOrigin(wTrov);
-    wRrov.setRPY(naifRoll, naifPitch, naifYaw);
     wMrov.setRotation(wRrov.normalize());
 
     tfBroadcaster.sendTransform(

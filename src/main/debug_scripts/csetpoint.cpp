@@ -7,6 +7,7 @@
 #include <eigen_conversions/eigen_msg.h>
 #include <geometry_msgs/Pose.h>
 #include <mavlink_cpp/GCSv1.h>
+#include <merbots_whrov_msgs/debug.h>
 #include <ros/publisher.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Joy.h>
@@ -48,13 +49,17 @@ private:
   geometry_msgs::TransformStamped static_transformStamped;
   std::vector<geometry_msgs::TransformStamped> static_transforms;
 
-  tf::StampedTransform nedMrov, nedMtarget, rovMtarget, cameraMrov;
+  tf::StampedTransform nedMerov, nedMtarget, cameraMrov;
+  tf::Transform rovMtarget;
   tf::Transform rovMned;
   std::shared_ptr<GCSv1> control;
+  ros::Publisher debugPublisher0;
 
-  wireless_ardusub::PID yawPID = wireless_ardusub::PID(0.1, 3.14, -3.14, 0.1, 0.5,
-                                                       0.05),
-                        vPID = wireless_ardusub::PID(0.1, 3, -3, 0.5, 1, 0.05);
+  double vmax = 500, vmin = -500;
+  wireless_ardusub::PID yawPID =
+                            wireless_ardusub::PID(0.1, 3.14, -3.14, 0.5, 0, 0),
+                        vPID =
+                            wireless_ardusub::PID(0.1, vmax, vmin, 0.8, 0, 1.5);
 
   // FUNCTIONS
   bool RisingEdge(const sensor_msgs::Joy::ConstPtr &joy, int index);
@@ -108,6 +113,9 @@ OperatorController::OperatorController(ros::NodeHandle &nh) : _nh(nh) {
 
   _controlState.arm = false;
   _controlState.mode = NAV_MANUAL;
+
+  debugPublisher0 =
+      _nh.advertise<merbots_whrov_msgs::debug>("/rov_controller", 1);
 }
 
 void OperatorController::ConfigCallback(
@@ -117,9 +125,7 @@ void OperatorController::ConfigCallback(
 }
 
 void OperatorController::Start() {
-  _mainLoop = std::thread([this]() {
-    Loop();
-  });
+  _mainLoop = std::thread([this]() { Loop(); });
 }
 
 void OperatorController::ResetPID() {
@@ -133,6 +139,9 @@ void OperatorController::Loop() {
   static_broadcaster.sendTransform(static_transforms);
   bool manual = true;
 
+  merbots_whrov_msgs::debug debugMsg;
+
+  double tyaw, cyaw;
   while (ros::ok()) {
     if (_controlState.mode == NAV_GUIDED) {
       if (manual) {
@@ -140,12 +149,10 @@ void OperatorController::Loop() {
         manual = false;
       }
       try {
-        listener.lookupTransform("local_origin_ned", "hil", ros::Time(0),
-                                 nedMrov);
+        listener.lookupTransform("local_origin_ned", "erov", ros::Time(0),
+                                 nedMerov);
         listener.lookupTransform("local_origin_ned", "bluerov2_ghost",
                                  ros::Time(0), nedMtarget);
-        listener.lookupTransform("erov", "bluerov2_ghost", ros::Time(0),
-                                 rovMtarget);
       } catch (tf::TransformException &ex) {
         Warn("TF: {}", ex.what());
         control->Arm(false);
@@ -155,35 +162,61 @@ void OperatorController::Loop() {
       control->SetFlyMode(FLY_MODE_R::MANUAL);
       control->Arm(true);
 
-      rovMned = nedMrov.inverse();
-      tf::Vector3 rovTtarget = rovMtarget.getOrigin();
-      tf::Quaternion rovRtarget = rovMtarget.getRotation();
+      tf::Vector3 nedTerov = nedMerov.getOrigin();
+      cyaw = tf::getYaw(nedMerov.getRotation());
 
-      tf::Vector3 nedTrov = nedMrov.getOrigin();
       tf::Vector3 nedTtarget = nedMtarget.getOrigin();
+      tyaw = tf::getYaw(nedMtarget.getRotation());
+
+      rovMtarget = nedMerov.inverse() * nedMtarget;
+
+      tf::Vector3 erovTtarget = rovMtarget.getOrigin();
+      tf::Quaternion erovRtarget = rovMtarget.getRotation();
 
       double vx, vy, vz;
-      double vTlpX = rovTtarget.getX(), vTlpY = rovTtarget.getY(),
-             vTlpZ = rovTtarget.getZ();
+      double vTlpX = erovTtarget.getX(), vTlpY = erovTtarget.getY(),
+             vTlpZ = erovTtarget.getZ();
       GetLinearVel(vTlpX, vTlpY, -vTlpZ, vx, vy, vz);
 
-      double rdiff = tf::getYaw(rovRtarget);
-      double rv = keepHeadingIteration(rdiff);
-      double mr = 100 / 3.14;
-      rv = mr * rv;
+      double m = 100 / vmax;
+      vx = m * vx;
+      vy = m * vy;
+      vz = m * vz;
 
-      double baseZ = -5;
+      double rdiff = tf::getYaw(erovRtarget);
+      double rv0 = keepHeadingIteration(rdiff);
+      double mr = 100 / 3.14;
+      double rv1 = mr * rv0;
+
+      double baseZ = -2;
       double newZ = vz + baseZ;
       auto x = ceil(ArduSubXYR(vx));
       auto y = ceil(ArduSubXYR(vy));
       auto z = ceil(ArduSubZ(newZ));
-      auto r = ceil(ArduSubXYR(rv));
+      auto r = ceil(ArduSubXYR(rv1));
 
-      Info("[ {} , {} , {} ] ----> [ {} , {} , {} ] ----> [ {} ({} -- {}) , "
-           "{} ({} -- {}) , {} ({} -- {})] ===== [ {} : {} : {} ]",
-           nedTrov.getX(), nedTrov.getY(), nedTrov.getZ(), nedTtarget.getX(),
-           nedTtarget.getY(), nedTtarget.getZ(), x, vTlpX, vx, y, vTlpY, vy, z,
-           vTlpZ, newZ, rdiff, rv, r);
+      Info("Send order: X: {} ({}) ; Y: {} ({}) ; Z: {} ({}) ; R: {} ;  rdiff: {} ; rout: {} "
+           "; rinput: {} ; Arm: {}",
+           x, vx, y, vy, z, vz, r, rdiff, rv0, rv1, _controlState.arm ? "true" : "false");
+
+      debugMsg.pout_yaw = r;
+      debugMsg.pout_x = x;
+      debugMsg.pout_y = y;
+      debugMsg.pout_z = z;
+      debugMsg.error_yaw = rdiff;
+      debugMsg.error_x = vTlpX;
+      debugMsg.error_y = vTlpY;
+      debugMsg.error_z = -vTlpZ;
+      debugMsg.target_yaw = tyaw;
+      debugMsg.target_x = nedTtarget.getX();
+      debugMsg.target_y = nedTtarget.getY();
+      debugMsg.target_z = nedTtarget.getZ();
+      debugMsg.current_yaw = cyaw;
+      debugMsg.current_x = nedTerov.getX();
+      debugMsg.current_y = nedTerov.getY();
+      debugMsg.current_z = nedTerov.getZ();
+
+      debugPublisher0.publish(debugMsg);
 
       control->SetManualControl(x, y, z, r);
     } else {
@@ -264,11 +297,9 @@ void OperatorController::GetLinearVel(const double &diffx, const double &diffy,
   double mod = std::sqrt(diffx * diffx + diffy * diffy + diffz * diffz);
   double vel = vPID.calculate(0, mod);
   Saturate(vel, diffx, diffy, diffz, vx, vy, vz);
-  double m = 100 / 3.;
-  vx = m * vx;
-  vy = m * vy;
-  vz = m * vz;
+  Info("Vel: {} ; Mod: {} ; vx: {} ; vy: {} ; vz: {}", vel, mod, vx, vy, vz);
 }
+
 bool OperatorController::RisingEdge(const sensor_msgs::Joy::ConstPtr &joy,
                                     int index) {
   return (joy->buttons[index] == 1 && _previous_buttons[index] == 0);
@@ -342,9 +373,9 @@ void OperatorController::JoyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
     break;
   }
 
-  Info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
-       _controlState.x, _controlState.y, _controlState.z, _controlState.r,
-       _controlState.arm ? "true" : "false", modeName);
+  //  Info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
+  //       _controlState.x, _controlState.y, _controlState.z, _controlState.r,
+  //       _controlState.arm ? "true" : "false", modeName);
 
   // remember current button states for future comparison
   _previous_buttons = std::vector<int>(joy->buttons);

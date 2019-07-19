@@ -81,6 +81,8 @@ double PIDImpl::calculate(double setpoint, double pv) {
 
   // Save error to previous error
   _pre_error = error;
+  std::cout << "Pout: " << Pout << "  Iout: " << Iout <<  "  Dout: " << Dout << " OUTPUT: " << output << std::endl;
+  std::cout << std::flush;
 
   return output;
 }
