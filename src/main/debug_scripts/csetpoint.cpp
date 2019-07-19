@@ -55,11 +55,15 @@ private:
   std::shared_ptr<GCSv1> control;
   ros::Publisher debugPublisher0;
 
-  double vmax = 500, vmin = -500;
+  double vmax = 1000, vmin = -1000;
   wireless_ardusub::PID yawPID =
-                            wireless_ardusub::PID(0.1, 3.14, -3.14, 0.5, 0, 0),
-                        vPID =
-                            wireless_ardusub::PID(0.1, vmax, vmin, 0.8, 0, 1.5);
+                            wireless_ardusub::PID(0.1, vmax, vmin, 5, 0.1, 0.05),
+                        xPID =
+                            wireless_ardusub::PID(0.1, vmax, vmin, 5, 0.1, 0.05),
+                        yPID =
+                            wireless_ardusub::PID(0.1, vmax, vmin, 5, 0.1, 0.05),
+                        zPID =
+                            wireless_ardusub::PID(0.1, vmax, vmin, 5, 0.1, 0.1);
 
   // FUNCTIONS
   bool RisingEdge(const sensor_msgs::Joy::ConstPtr &joy, int index);
@@ -76,9 +80,9 @@ private:
   void StopRobot();
   void Saturate(const double &max, const double &x, const double &y,
                 const double &z, double &vx, double &vy, double &vz);
-  void GetLinearVel(const double &diffx, const double &diffy,
-                    const double &diffz, double &vx, double &vy, double &vz);
-
+  void GetLinearXVel(const double &diff, double &v);
+  void GetLinearYVel(const double &diff, double &v);
+  void GetLinearZVel(const double &diff, double &v);
   void Loop();
   void ResetPID();
 
@@ -130,7 +134,9 @@ void OperatorController::Start() {
 
 void OperatorController::ResetPID() {
   yawPID.Reset();
-  vPID.Reset();
+  xPID.Reset();
+  yPID.Reset();
+  zPID.Reset();
 }
 
 void OperatorController::Loop() {
@@ -176,28 +182,39 @@ void OperatorController::Loop() {
       double vx, vy, vz;
       double vTlpX = erovTtarget.getX(), vTlpY = erovTtarget.getY(),
              vTlpZ = erovTtarget.getZ();
-      GetLinearVel(vTlpX, vTlpY, -vTlpZ, vx, vy, vz);
 
-      double m = 100 / vmax;
-      vx = m * vx;
-      vy = m * vy;
-      vz = m * vz;
+      GetLinearXVel(vTlpX, vx);
+      GetLinearYVel(vTlpY, vy);
+      GetLinearZVel(-vTlpZ, vz);
+
+//      double m = 100 / vmax;
+//      vx = m * vx;
+//      vy = m * vy;
+//      vz = m * vz;
+      if(vx > 100) vx = 100;
+      if(vx < -100) vx = -100;
+      if(vy > 100) vy = 100;
+      if(vy < -100) vy = -100;
+      if(vz > 100) vz = 100;
+      if(vz < -100) vz = -100;
 
       double rdiff = tf::getYaw(erovRtarget);
       double rv0 = keepHeadingIteration(rdiff);
-      double mr = 100 / 3.14;
-      double rv1 = mr * rv0;
+//      double mr = 100 / 3.14;
+//      double rv1 = mr * rv0;
 
-      double baseZ = -2;
+      double baseZ = -38;
       double newZ = vz + baseZ;
       auto x = ceil(ArduSubXYR(vx));
       auto y = ceil(ArduSubXYR(vy));
       auto z = ceil(ArduSubZ(newZ));
-      auto r = ceil(ArduSubXYR(rv1));
+      auto r = ceil(ArduSubXYR(rv0));
 
-      Info("Send order: X: {} ({}) ; Y: {} ({}) ; Z: {} ({}) ; R: {} ;  rdiff: {} ; rout: {} "
+      Info("Send order: X: {} ({}) ; Y: {} ({}) ; Z: {} ({}) ; R: {} ;  rdiff: "
+           "{} ; rout: {} "
            "; rinput: {} ; Arm: {}",
-           x, vx, y, vy, z, vz, r, rdiff, rv0, rv1, _controlState.arm ? "true" : "false");
+           x, vx, y, vy, z, vz, r, rdiff, rv0, rv0,
+           _controlState.arm ? "true" : "false");
 
       debugMsg.pout_yaw = r;
       debugMsg.pout_x = x;
@@ -291,15 +308,15 @@ void OperatorController::Saturate(const double &max, const double &x,
   }
 }
 
-void OperatorController::GetLinearVel(const double &diffx, const double &diffy,
-                                      const double &diffz, double &vx,
-                                      double &vy, double &vz) {
-  double mod = std::sqrt(diffx * diffx + diffy * diffy + diffz * diffz);
-  double vel = vPID.calculate(0, mod);
-  Saturate(vel, diffx, diffy, diffz, vx, vy, vz);
-  Info("Vel: {} ; Mod: {} ; vx: {} ; vy: {} ; vz: {}", vel, mod, vx, vy, vz);
+void OperatorController::GetLinearXVel(const double &diffx, double &vx) {
+  vx = xPID.calculate(0, -diffx);
 }
-
+void OperatorController::GetLinearYVel(const double &diffy, double &vy) {
+  vy = yPID.calculate(0, -diffy);
+}
+void OperatorController::GetLinearZVel(const double &diffz, double &vz) {
+  vz = zPID.calculate(0, -diffz);
+}
 bool OperatorController::RisingEdge(const sensor_msgs::Joy::ConstPtr &joy,
                                     int index) {
   return (joy->buttons[index] == 1 && _previous_buttons[index] == 0);
