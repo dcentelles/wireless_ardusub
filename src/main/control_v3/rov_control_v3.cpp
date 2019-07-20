@@ -104,10 +104,10 @@ static double ned_x, ned_y, ned_z;
 static std::mutex attitude_mutex;
 static tfScalar g_yaw, g_pitch, g_roll;
 
-PID yawPID = PID(0.1, 100, -100, 1, 0.05, 0.5),
-    xPID = PID(0.2, 100, -100, 0.1, 0.01, 0),
-    yPID = PID(0.2, 100, -100, 0.1, 0.01, 0),
-    zPID = PID(0.2, 100, -100, 0.1, 0.01, 0);
+PID yawPID = PID(100, -100, 1, 0.05, 0.5),
+    xPID = PID(100, -100, 0.1, 0.01, 0),
+    yPID = PID(100, -100, 0.1, 0.01, 0),
+    zPID = PID(100, -100, 0.1, 0.01, 0);
 
 static ARDUSUB_NAV_MODE lastReceivedMode;
 
@@ -260,7 +260,7 @@ void keepHeadingIteration(void) {
   // per = 100/180 * d [-100,100]
   double per = 100. / 180 * diff;
 
-  double vel = yawPID.calculate(0, -1 * per);
+  double vel = yawPID.calculate(0.2, 0, -1 * per);
 
   Log->Info("GG: {} -- {} -- {} -- {} -- {}", diff, currentHeading,
             desiredOrientation, per, vel);

@@ -185,7 +185,7 @@ int main(int argc, char **argv) {
     nmsg.position = naifInputPose.position;
     nmsg.orientation = naifInputPose.orientation;
 
-    bluerov2Pub.publish(nmsg);
+    //bluerov2Pub.publish(nmsg);
 
     ros::spinOnce();
   }
