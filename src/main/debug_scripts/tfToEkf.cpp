@@ -146,8 +146,10 @@ int main(int argc, char **argv) {
     }
 
     // Low pass filter
-    double delta = 0.06449;
-    double deltaB = 0.9355;
+//    double delta = 0.06449;
+//    double deltaB = 0.9355;
+    double delta = 0.15;
+    double deltaB = 0.85;
     wTrov[0] = deltaB * lastNaifT[0] + delta * auxT[0];
     wTrov[1] = deltaB * lastNaifT[1] + delta * auxT[1];
     wTrov[2] = deltaB * lastNaifT[2] + delta * auxT[2];

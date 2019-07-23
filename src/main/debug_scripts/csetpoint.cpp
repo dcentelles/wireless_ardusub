@@ -59,10 +59,10 @@ private:
   dccomms::Timer timer;
 
   double vmax = 1000, vmin = -1000;
-  wireless_ardusub::PID yawPID = wireless_ardusub::PID(vmax, vmin, 20, 20, 0.05),
-                        xPID = wireless_ardusub::PID(vmax, vmin, 6, 100, 0.01),
-                        yPID = wireless_ardusub::PID(vmax, vmin, 6, 100, 0.01),
-                        zPID = wireless_ardusub::PID(vmax, vmin, 20, 50, 0.05);
+  wireless_ardusub::PID yawPID = wireless_ardusub::PID(vmax, vmin, 10, 20, 0.05),
+                        xPID = wireless_ardusub::PID(vmax, vmin, 10, 60, 0.05),
+                        yPID = wireless_ardusub::PID(vmax, vmin, 10, 60, 0.05),
+                        zPID = wireless_ardusub::PID(vmax, vmin, 20, 10, 0.05);
 
   // FUNCTIONS
   bool RisingEdge(const sensor_msgs::Joy::ConstPtr &joy, int index);
@@ -210,31 +210,32 @@ void OperatorController::Loop() {
       auto z = ceil(ArduSubZ(newZ));
       auto r = ceil(ArduSubXYR(rv0));
 
-      double yoffset = 190;
-      double xoffset = 50;
-      double roffset = 390;
-      double zoffset = 150;
+      double yoffset = 60;
+      double xoffset = 60;
+      double roffset = 200;
+      double zoffset = 20;
       double deadband = 0;
 
       if (y > deadband)
-        y += yoffset - 10;
+        y += yoffset;
       else if (y < -deadband)
-        y -= yoffset - 10;
+        y -= yoffset;
 
       if (x > deadband)
           x += xoffset;
       else if (x < -deadband)
           x -= xoffset;
 
+      if (z > 500)
+          z += 100;
+      else if (z < 500)
+          z -= zoffset;
+
       if (r > deadband)
-          r += roffset;
+          r += roffset + 5;
       else if (r < -deadband)
           r -= roffset;
 
-      if (z > 500)
-          z += 0;
-      else if (z < 500)
-          z -= zoffset;
 
 //      if (r > 10)
 //          z += roffset;
