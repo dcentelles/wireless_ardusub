@@ -3,6 +3,7 @@
 #include <GeographicLib/LocalCartesian.hpp>
 #include <chrono>
 #include <cpplogging/cpplogging.h>
+#include <dccomms/Utils.h>
 #include <dynamic_reconfigure/server.h>
 #include <eigen_conversions/eigen_msg.h>
 #include <geometry_msgs/Pose.h>
@@ -18,7 +19,6 @@
 #include <thread>
 #include <wireless_ardusub/pid.h>
 #include <wireless_ardusub/wireless_teleop_joyConfig.h>
-#include <dccomms/Utils.h>
 
 using namespace mavlink_cpp;
 using namespace cpplogging;
@@ -59,14 +59,10 @@ private:
   dccomms::Timer timer;
 
   double vmax = 1000, vmin = -1000;
-  wireless_ardusub::PID yawPID =
-                            wireless_ardusub::PID(vmax, vmin, 7, 7, 0.05),
-                        xPID =
-                            wireless_ardusub::PID(vmax, vmin, 12, 12, 0.05),
-                        yPID =
-                            wireless_ardusub::PID(vmax, vmin, 12, 12, 0.05),
-                        zPID =
-                            wireless_ardusub::PID(vmax, vmin, 12, 12, 0.3);
+  wireless_ardusub::PID yawPID = wireless_ardusub::PID(vmax, vmin, 20, 20, 0.05),
+                        xPID = wireless_ardusub::PID(vmax, vmin, 6, 100, 0.01),
+                        yPID = wireless_ardusub::PID(vmax, vmin, 6, 100, 0.01),
+                        zPID = wireless_ardusub::PID(vmax, vmin, 20, 50, 0.05);
 
   // FUNCTIONS
   bool RisingEdge(const sensor_msgs::Joy::ConstPtr &joy, int index);
@@ -77,15 +73,15 @@ private:
                       uint32_t level);
   void JoyCallback(const sensor_msgs::Joy::ConstPtr &joy);
 
-  double keepHeadingIteration(const double & dt, double diff);
+  double keepHeadingIteration(const double &dt, double diff);
   double ArduSubXYR(double per);
   double ArduSubZ(double per);
   void StopRobot();
   void Saturate(const double &max, const double &x, const double &y,
                 const double &z, double &vx, double &vy, double &vz);
-  void GetLinearXVel(const double & dt, const double &diff, double &v);
-  void GetLinearYVel(const double & dt, const double &diff, double &v);
-  void GetLinearZVel(const double & dt, const double &diff, double &v);
+  void GetLinearXVel(const double &dt, const double &diff, double &v);
+  void GetLinearYVel(const double &dt, const double &diff, double &v);
+  void GetLinearZVel(const double &dt, const double &diff, double &v);
   void Loop();
   void ResetPID();
 
@@ -144,8 +140,6 @@ void OperatorController::ResetPID() {
 }
 
 void OperatorController::Loop() {
-  //  _controlState.mode = NAV_MANUAL;
-  //  control->SetFlyMode(FLY_MODE_R::MANUAL);
   static_broadcaster.sendTransform(static_transforms);
   bool manual = true;
 
@@ -169,7 +163,7 @@ void OperatorController::Loop() {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         continue;
       }
-      control->SetFlyMode(FLY_MODE_R::MANUAL);
+      control->SetFlyMode(FLY_MODE_R::STABILIZE);
       control->Arm(true);
 
       tf::Vector3 nedTerov = nedMerov.getOrigin();
@@ -193,28 +187,60 @@ void OperatorController::Loop() {
       GetLinearYVel(elapsedSecs, vTlpY, vy);
       GetLinearZVel(elapsedSecs, -vTlpZ, vz);
 
-//      double m = 100 / vmax;
-//      vx = m * vx;
-//      vy = m * vy;
-//      vz = m * vz;
-      if(vx > 100) vx = 100;
-      if(vx < -100) vx = -100;
-      if(vy > 100) vy = 100;
-      if(vy < -100) vy = -100;
-      if(vz > 100) vz = 100;
-      if(vz < -100) vz = -100;
+      if (vx > 100)
+        vx = 100;
+      if (vx < -100)
+        vx = -100;
+      if (vy > 100)
+        vy = 100;
+      if (vy < -100)
+        vy = -100;
+      if (vz > 100)
+        vz = 100;
+      if (vz < -100)
+        vz = -100;
 
       double rdiff = tf::getYaw(erovRtarget);
       double rv0 = keepHeadingIteration(elapsedSecs, rdiff);
-//      double mr = 100 / 3.14;
-//      double rv1 = mr * rv0;
 
-      double baseZ = -38;
+      double baseZ = 0; //-38;
       double newZ = vz + baseZ;
       auto x = ceil(ArduSubXYR(vx));
       auto y = ceil(ArduSubXYR(vy));
       auto z = ceil(ArduSubZ(newZ));
       auto r = ceil(ArduSubXYR(rv0));
+
+      double yoffset = 190;
+      double xoffset = 50;
+      double roffset = 390;
+      double zoffset = 150;
+      double deadband = 0;
+
+      if (y > deadband)
+        y += yoffset - 10;
+      else if (y < -deadband)
+        y -= yoffset - 10;
+
+      if (x > deadband)
+          x += xoffset;
+      else if (x < -deadband)
+          x -= xoffset;
+
+      if (r > deadband)
+          r += roffset;
+      else if (r < -deadband)
+          r -= roffset;
+
+      if (z > 500)
+          z += 0;
+      else if (z < 500)
+          z -= zoffset;
+
+//      if (r > 10)
+//          z += roffset;
+//      else if (r < -10)
+//          z -= roffset;
+
 
       Info("Send order: X: {} ({}) ; Y: {} ({}) ; Z: {} ({}) ; R: {} ;  rdiff: "
            "{} ; rout: {} "
@@ -278,7 +304,7 @@ void OperatorController::Loop() {
 double OperatorController::ArduSubXYR(double per) { return per * 10; }
 double OperatorController::ArduSubZ(double per) { return (per + 100) / 0.2; }
 
-double OperatorController::keepHeadingIteration(const double & dt, double diff) {
+double OperatorController::keepHeadingIteration(const double &dt, double diff) {
   double vel = yawPID.calculate(dt, 0, -1 * diff);
 
   return vel;
@@ -315,13 +341,16 @@ void OperatorController::Saturate(const double &max, const double &x,
   }
 }
 
-void OperatorController::GetLinearXVel(const double & dt, const double &diffx, double &vx) {
+void OperatorController::GetLinearXVel(const double &dt, const double &diffx,
+                                       double &vx) {
   vx = xPID.calculate(dt, 0, -diffx);
 }
-void OperatorController::GetLinearYVel(const double & dt, const double &diffy, double &vy) {
+void OperatorController::GetLinearYVel(const double &dt, const double &diffy,
+                                       double &vy) {
   vy = yPID.calculate(dt, 0, -diffy);
 }
-void OperatorController::GetLinearZVel(const double & dt, const double &diffz, double &vz) {
+void OperatorController::GetLinearZVel(const double &dt, const double &diffz,
+                                       double &vz) {
   vz = zPID.calculate(dt, 0, -diffz);
 }
 bool OperatorController::RisingEdge(const sensor_msgs::Joy::ConstPtr &joy,
@@ -423,5 +452,4 @@ int main(int argc, char **argv) {
     ros::spinOnce();
     rate.sleep();
   }
-  // op.Loop();
 }

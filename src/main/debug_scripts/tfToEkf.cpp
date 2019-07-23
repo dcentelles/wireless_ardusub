@@ -185,90 +185,9 @@ int main(int argc, char **argv) {
     nmsg.position = naifInputPose.position;
     nmsg.orientation = naifInputPose.orientation;
 
-    //bluerov2Pub.publish(nmsg);
+    bluerov2Pub.publish(nmsg);
 
     ros::spinOnce();
   }
   return 0;
 }
-
-//    lastNaifR.setX(wRrov.getX());
-//    lastNaifR.setY(wRrov.getY());
-//    lastNaifR.setZ(wRrov.getZ());
-//    lastNaifR.setW(wRrov.getW());
-
-// Pub to ekf
-//    tf::poseTFToMsg(wMrov, ekfInputPose);
-//    ekfInputMsg.pose.pose = ekfInputPose;
-//    ekfInputMsg.pose.covariance = covmat;
-//    ekfInputMsg.header.stamp = ros::Time::now();
-//    ekfInputMsg.header.frame_id = "aruco_rov_ekf";
-//    ekfPub.publish(ekfInputMsg);
-
-// Pub to naif
-//    tf::poseTFToMsg(wMrov, naifInputPose);
-//    naifInputMsg.pose.pose = naifInputPose;
-//    naifInputMsg.pose.covariance = covmat;
-//    naifInputMsg.header.stamp = ros::Time::now();
-//    naifInputMsg.header.frame_id = "aruco_rov_naif";
-//    naifFilterPub.publish(naifInputMsg);
-
-//    nmsg.position = naifInputPose.position;
-//    nmsg.orientation = naifInputPose.orientation;
-
-//    bluerov2Pub.publish(nmsg);
-
-//   double maxdiff = 0.35;
-//   auxT = wMrov.getOrigin();
-//   auxR = wMrov.getRotation();
-//   double diffx, diffy, diffz;
-
-//   diffx = std::abs(lastT[0] - auxT[0]);
-//   diffy = std::abs(lastT[1] - auxT[1]);
-//   diffz = std::abs(lastT[2] - auxT[2]);
-
-//   lastT = auxT;
-//   lastR = auxR;
-
-//   double dist = std::sqrt(diffx * diffx + diffy * diffy + diffz * diffz);
-//   if(dist > maxdiff)
-//   {
-//       continue;
-//   }
-//   //mean filter
-//   fwindow.push_back(wMrov);
-//   if(fwindow.size() > winSize)
-//   {
-//        fwindow.pop_front();
-//   }
-//   wTrov.setZero();
-//   wRrov.setValue(0,0,0,0);
-
-//   for(auto trans : fwindow)
-//   {
-//       auxT = wMrov.getOrigin();
-//       auxR = wMrov.getRotation();
-
-//       wTrov[0] += auxT[0];
-//       wTrov[1] += auxT[1];
-//       wTrov[2] += auxT[2];
-
-//       wRrov.setX(wRrov.getX() + auxR.getX());
-//       wRrov.setY(wRrov.getY() + auxR.getY());
-//       wRrov.setZ(wRrov.getZ() + auxR.getZ());
-//       wRrov.setW(wRrov.getW() + auxR.getW());
-//   }
-//   auto winsize = static_cast<double>(fwindow.size());
-//   wRrov.setX(auxR.getX() / winsize);
-//   wRrov.setY(auxR.getY() / winsize);
-//   wRrov.setZ(auxR.getZ() / winsize);
-//   wRrov.setW(auxR.getW() / winsize);
-
-//   wTrov[0] = wTrov[0] / winsize;
-//   wTrov[1] = wTrov[1] / winsize;
-//   wTrov[2] = wTrov[2] / winsize;
-
-//    wRrov.setX(deltaB * lastNaifR.getX() + delta * auxR.getX());
-//    wRrov.setY(deltaB * lastNaifR.getY() + delta * auxR.getY());
-//    wRrov.setZ(deltaB * lastNaifR.getZ() + delta * auxR.getZ());
-//    wRrov.setW(deltaB * lastNaifR.getW() + delta * auxR.getW());
