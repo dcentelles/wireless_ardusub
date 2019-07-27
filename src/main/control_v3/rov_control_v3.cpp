@@ -104,10 +104,10 @@ static double ned_x, ned_y, ned_z;
 static std::mutex attitude_mutex;
 static tfScalar g_yaw, g_pitch, g_roll;
 
-PID yawPID = PID(100, -100, 1, 0.05, 0.5),
-    xPID = PID(100, -100, 0.1, 0.01, 0),
-    yPID = PID(100, -100, 0.1, 0.01, 0),
-    zPID = PID(100, -100, 0.1, 0.01, 0);
+PID yawPID = PID(0.1, 100, -100, 1, 0.05, 0.5),
+    xPID = PID(0.2, 100, -100, 0.1, 0.01, 0),
+    yPID = PID(0.2, 100, -100, 0.1, 0.01, 0),
+    zPID = PID(0.2, 100, -100, 0.1, 0.01, 0);
 
 static ARDUSUB_NAV_MODE lastReceivedMode;
 
@@ -162,12 +162,11 @@ void notifyROVReady() {
   currentHROVMessage_mutex.unlock();
 }
 
-double kk = 0.5;
 // from -127,127  to -100,100
 double getJoyAxisNormalized(int x) { return 200. / 256 * x; }
 // from -100,100 to -1000,1000
-double arduSubXYR(double per) { return per * kk * 10; }
-double arduSubZ(double per) { return (per * kk + 100) / 0.2; }
+double arduSubXYR(double per) { return per * 10; }
+double arduSubZ(double per) { return (per + 100) / 0.2; }
 
 void stopRobot() {
   int x = ceil(arduSubXYR(0));
@@ -260,7 +259,7 @@ void keepHeadingIteration(void) {
   // per = 100/180 * d [-100,100]
   double per = 100. / 180 * diff;
 
-  double vel = yawPID.calculate(0.2, 0, -1 * per);
+  double vel = yawPID.calculate(0, -1 * per);
 
   Log->Info("GG: {} -- {} -- {} -- {} -- {}", diff, currentHeading,
             desiredOrientation, per, vel);
@@ -562,11 +561,11 @@ void operatorMsgParserWork() {
         switch (lastReceivedMode) {
         case ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD:
           modeName = "DEPTH HOLD";
-          //control->SetDepthHoldMode();
+          control->SetDepthHoldMode();
           break;
         case ARDUSUB_NAV_MODE::NAV_STABILIZE:
           modeName = "STABILIZE";
-          //control->SetStabilizeMode();
+          control->SetStabilizeMode();
           break;
         case ARDUSUB_NAV_MODE::NAV_MANUAL:
           modeName = "MANUAL";
@@ -574,12 +573,12 @@ void operatorMsgParserWork() {
           break;
         case ARDUSUB_NAV_MODE::NAV_POS_HOLD:
           modeName = "POS HOLD";
-          //control->SetFlyMode(FLY_MODE_R::POS_HOLD);
+          control->SetFlyMode(FLY_MODE_R::POS_HOLD);
           break;
         case ARDUSUB_NAV_MODE::NAV_GUIDED:
           modeName = "GUIDED";
           //  control->EnableManualControl(false);
-          //control->SetFlyMode(FLY_MODE_R::GUIDED);
+          control->SetFlyMode(FLY_MODE_R::GUIDED);
           break;
         default:
           break;
