@@ -354,6 +354,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
 
   _settings = HROVSettingsV2::Build();
   _teleopOrder = TeleopOrder::Build();
+  SetArming(false);
   _node = CreateObject<Operator>();
   _node->SetLogLevel(LogLevel::info);
   _node->SetLogFormatter(std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));

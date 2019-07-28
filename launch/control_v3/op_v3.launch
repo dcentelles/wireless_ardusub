@@ -1,11 +1,7 @@
 <?xml version="1.0"?>
 
 <launch>
-  <!-- start the joystick driver -->
-  <node respawn="true" pkg="joy" type="joy_node" name="joy_node" output="screen">
-    <param name="dev" value="/dev/input/js0" type="string"/>
-  </node>
-
+	<!-- start the joystick driver -->
   <arg name="namespace" default="/merbots/wrov/operator"/>
   <arg name="log2Console" default="false"/>
   <arg name="port" default="/dev/ttyUSB0"/> <!-- to use service set port to "service" -->
@@ -13,7 +9,12 @@
   <arg name="launchHMI" default="true"/>
   <arg name="log2File" default="false"/>
   <arg name="launchComms" default="true"/>
+  <arg name="launchJoy" default="true"/>
  
+  <node if="$(arg launchJoy)" respawn="true" pkg="joy" type="joy_node" name="joy_node" output="screen">
+    <param name="dev" value="/dev/input/js0" type="string"/>
+  </node>
+
   <include file="$(find image_utils_ros)/launch/decoder.launch">
      <arg name="log2Console" value="$(arg log2Console)"/>
      <arg name="namespace" value="$(arg namespace)"/>
