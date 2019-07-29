@@ -728,12 +728,12 @@ int main(int argc, char **argv) {
 
   if (params.log2File) {
     Log->SetLogFormatter(
-        std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));
+        std::make_shared<spdlog::pattern_formatter>("%D %T.%F %v"));
     Log->LogToFile("rov_v3_control");
     control->LogToFile("rov_v3_gcs");
     commsNode->LogToFile("rov_v3_comms_node");
     commsNode->SetLogFormatter(
-        std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));
+        std::make_shared<spdlog::pattern_formatter>("%D %T.%F %v"));
   }
 
   if (params.serialPort != "service") {
@@ -824,6 +824,9 @@ int main(int argc, char **argv) {
       currentHROVMessage_mutex.unlock();
       currentHROVMessage_cond.notify_one();
 
+      Log->Info("NED: x: {} y: {} z: {} h: {} ({})", ned_x, ned_y, ned_z,
+                heading, g_yaw);
+
       if (guidedMode && goToMission) {
         if (firstPIDIteration)
           ResetPID();
@@ -889,6 +892,7 @@ int main(int argc, char **argv) {
         debugMsg.current_z = nedTerov.getZ();
 
         debugPublisher0.publish(debugMsg);
+        Log->Info("T.DIST: {}", nedTerov.distance(nedTtarget));
 
         control->SetManualControl(x, y, z, r);
         timer.Reset();

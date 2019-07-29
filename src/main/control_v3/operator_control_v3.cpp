@@ -193,7 +193,6 @@ private:
 
 void OperatorController::StartWorkers() {
   _hrovMsgParserWorker = std::thread([this]() {
-
     while (1) {
       std::unique_lock<std::mutex> lock(_currentHROVMessage_mutex);
       while (!_currentHROVMessage_updated) {
@@ -335,7 +334,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
   _initLT = false;
   _initRT = false;
   SetLogName("TeleopJoy");
-  SetLogFormatter(std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));
+  SetLogFormatter(std::make_shared<spdlog::pattern_formatter>("%D %T.%F %v"));
   SetAsyncMode(true);
   Log->info("Sender initialized");
 
@@ -357,7 +356,8 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
   SetArming(false);
   _node = CreateObject<Operator>();
   _node->SetLogLevel(LogLevel::info);
-  _node->SetLogFormatter(std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));
+  _node->SetLogFormatter(
+      std::make_shared<spdlog::pattern_formatter>("%D %T.%F %v"));
 
   if (params.log2File) {
     _node->LogToFile("op_v3_comms_node");
@@ -386,7 +386,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
     commsService->SetLogLevel(LogLevel::info);
     commsService->Start();
     commsService->SetLogFormatter(
-        std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));
+        std::make_shared<spdlog::pattern_formatter>("%D %T.%F %v"));
     _node->SetComms(commsService);
   }
 
@@ -543,10 +543,9 @@ void OperatorController::JoyCallback(const sensor_msgs::Joy::ConstPtr &joy) {
     break;
   }
 
-    Info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
-         _teleopOrder->GetX(), _teleopOrder->GetY(), _teleopOrder->GetZ(),
-         _teleopOrder->GetR(), _teleopOrder->Arm() ? "true" : "false",
-         modeName);
+  Info("Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
+       _teleopOrder->GetX(), _teleopOrder->GetY(), _teleopOrder->GetZ(),
+       _teleopOrder->GetR(), _teleopOrder->Arm() ? "true" : "false", modeName);
   _teleopOrder_mutex.unlock();
 
   // remember current button states for future comparison
@@ -779,9 +778,9 @@ int main(int argc, char **argv) {
   teleop.SetAsyncMode();
 
   teleop.SetLogFormatter(
-      std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));
+      std::make_shared<spdlog::pattern_formatter>("%D %T.%F %v"));
   Log->SetLogFormatter(
-      std::make_shared<spdlog::pattern_formatter>("[%T.%F] %v"));
+      std::make_shared<spdlog::pattern_formatter>("%D %T.%F %v"));
   if (params.log2File) {
     Log->LogToFile("op_v3_main");
     teleop.LogToFile("op_v3_control");
