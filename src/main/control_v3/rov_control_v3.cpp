@@ -152,14 +152,26 @@ void notifyROVReady() {
 }
 
 static double vmax = 1000, vmin = -1000;
-static wireless_ardusub::PID yawPID = wireless_ardusub::PID(vmax, vmin, 15, 20,
+static wireless_ardusub::PID yawPID = wireless_ardusub::PID(vmax, vmin, 10, 20,
                                                             0.05),
-                             xPID =
-                                 wireless_ardusub::PID(vmax, vmin, 10, 20, 0.4),
-                             yPID =
-                                 wireless_ardusub::PID(vmax, vmin, 10, 20, 0.4),
-                             zPID =
-                                 wireless_ardusub::PID(vmax, vmin, 10, 10, 0.4);
+                             xPID = wireless_ardusub::PID(vmax, vmin, 15, 60,
+                                                          0.05),
+                             yPID = wireless_ardusub::PID(vmax, vmin, 15, 60,
+                                                          0.05),
+                             zPID = wireless_ardusub::PID(vmax, vmin, 20, 10,
+                                                          0.05);
+
+//    yawPID = wireless_ardusub::PID(vmax, vmin, 15, 20,
+//                                                            0.05),
+//                             xPID =
+//                                 wireless_ardusub::PID(vmax, vmin, 10, 20,
+//                                 0.4),
+//                             yPID =
+//                                 wireless_ardusub::PID(vmax, vmin, 10, 20,
+//                                 0.4),
+//                             zPID =
+//                                 wireless_ardusub::PID(vmax, vmin, 10, 10,
+//                                 0.4);
 
 static dccomms::Timer timer;
 
@@ -417,7 +429,8 @@ void operatorMsgParserWork() {
         case ARDUSUB_NAV_MODE::NAV_GUIDED:
           modeName = "GUIDED";
           guidedMode = true;
-          control->SetManualMode();
+          //control->SetManualMode();
+          control->SetStabilizeMode();
           if (currentMode != ARDUSUB_NAV_MODE::NAV_GUIDED) {
             ResetPID();
           }
@@ -867,12 +880,38 @@ int main(int argc, char **argv) {
         double rdiff = tf::getYaw(erovRtarget);
         double rv0 = keepHeadingIteration(elapsedSecs, rdiff);
 
-        double baseZ = -38; //-38;
+        double baseZ = 0; //-38;
         double newZ = vz + baseZ;
         auto x = ceil(ArduSubXYR(vx));
         auto y = ceil(ArduSubXYR(vy));
         auto z = ceil(ArduSubZ(newZ));
         auto r = ceil(ArduSubXYR(rv0));
+
+        double yoffset = 90;
+        double xoffset = 90;
+        double roffset = 460;
+        double zoffset = 10;
+        double deadband = 0;
+
+        if (y > deadband)
+            y += yoffset;
+        else if (y < -deadband)
+            y -= yoffset;
+
+        if (x > deadband)
+            x += xoffset;
+        else if (x < -deadband)
+            x -= xoffset;
+
+        if (z > 500)
+            z += 150;
+        else if (z < 500)
+            z -= zoffset;
+
+        if (r > deadband)
+            r += roffset + 5;
+        else if (r < -deadband)
+            r -= roffset;
 
         debugMsg.pout_yaw = r;
         debugMsg.pout_x = x;

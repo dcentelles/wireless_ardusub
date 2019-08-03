@@ -60,8 +60,8 @@ private:
 
   double vmax = 1000, vmin = -1000;
   wireless_ardusub::PID yawPID = wireless_ardusub::PID(vmax, vmin, 10, 20, 0.05),
-                        xPID = wireless_ardusub::PID(vmax, vmin, 10, 60, 0.05),
-                        yPID = wireless_ardusub::PID(vmax, vmin, 10, 60, 0.05),
+                        xPID = wireless_ardusub::PID(vmax, vmin, 15, 60, 0.05),
+                        yPID = wireless_ardusub::PID(vmax, vmin, 15, 60, 0.05),
                         zPID = wireless_ardusub::PID(vmax, vmin, 20, 10, 0.05);
 
   // FUNCTIONS
@@ -210,10 +210,10 @@ void OperatorController::Loop() {
       auto z = ceil(ArduSubZ(newZ));
       auto r = ceil(ArduSubXYR(rv0));
 
-      double yoffset = 60;
-      double xoffset = 60;
-      double roffset = 200;
-      double zoffset = 20;
+      double yoffset = 90;
+      double xoffset = 90;
+      double roffset = 460;
+      double zoffset = 10;
       double deadband = 0;
 
       if (y > deadband)
@@ -227,7 +227,7 @@ void OperatorController::Loop() {
           x -= xoffset;
 
       if (z > 500)
-          z += 100;
+          z += 150;
       else if (z < 500)
           z -= zoffset;
 

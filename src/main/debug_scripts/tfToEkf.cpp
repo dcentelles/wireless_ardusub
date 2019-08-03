@@ -78,7 +78,7 @@ int main(int argc, char **argv) {
   static_broadcaster.sendTransform(static_transforms);
   ros::Publisher ekfPub, naifFilterPub;
   ros::Subscriber ekfSub;
-  bluerov2Pub = nh.advertise<geometry_msgs::Pose>("/bluerov2/pose", 1);
+  bluerov2Pub = nh.advertise<geometry_msgs::Pose>("/hil/pose", 1);
   ekfPub = nh.advertise<nav_msgs::Odometry>("/vo", 1);
   naifFilterPub = nh.advertise<nav_msgs::Odometry>("/naif_filter", 1);
   nh.subscribe<geometry_msgs::PoseWithCovarianceStamped>(
@@ -187,7 +187,7 @@ int main(int argc, char **argv) {
     nmsg.position = naifInputPose.position;
     nmsg.orientation = naifInputPose.orientation;
 
-    //bluerov2Pub.publish(nmsg);
+    bluerov2Pub.publish(nmsg);
 
     ros::spinOnce();
   }
