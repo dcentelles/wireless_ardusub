@@ -4,7 +4,7 @@
 #include <dccomms/Utils.h>
 #include <fcntl.h>
 #include <geometry_msgs/Pose.h>
-#include <mavlink_cpp/GCSv1.h>
+#include <mavlink_cpp/GCS.h>
 #include <netinet/in.h>
 #include <ros/publisher.h>
 #include <ros/ros.h>

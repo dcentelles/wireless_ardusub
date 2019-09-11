@@ -7,7 +7,7 @@
 #include <eigen_conversions/eigen_msg.h>
 #include <image_utils_ros_msgs/EncodedImg.h>
 #include <image_utils_ros_msgs/EncodingConfig.h>
-#include <mavlink_cpp/GCSv1.h>
+#include <mavlink_cpp/GCS.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Imu.h>
 #include <telerobotics/HROVMessageV2.h>
@@ -44,7 +44,7 @@ static LoggerPtr Log;
 static Params params;
 
 static uint16_t localPort = 14550;
-static dccomms::Ptr<GCSv1> control = dccomms::CreateObject<GCSv1>(localPort);
+static dccomms::Ptr<GCS> control = dccomms::CreateObject<GCS>(localPort);
 
 static dccomms::Ptr<OperatorMessageV2> currentOperatorMessage =
     dccomms::CreateObject<OperatorMessageV2>();

@@ -5,7 +5,7 @@
 #include <cpplogging/cpplogging.h>
 #include <eigen_conversions/eigen_msg.h>
 #include <geometry_msgs/Pose.h>
-#include <mavlink_cpp/GCSv1.h>
+#include <mavlink_cpp/GCS.h>
 #include <ros/publisher.h>
 #include <ros/ros.h>
 #include <tf/transform_broadcaster.h>
@@ -22,7 +22,7 @@ int main(int argc, char **argv) {
   log->FlushLogOn(debug);
   // ros::Publisher fake_gps_pub;
   uint16_t localPort = 14550;
-  std::shared_ptr<GCSv1> control(new GCSv1(localPort));
+  std::shared_ptr<GCS> control(new GCS(localPort));
 
   ros::init(argc, argv, "simple_bluerov2_publisher");
   ros::NodeHandle nh;

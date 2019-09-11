@@ -4,7 +4,7 @@
 #include <cpplogging/cpplogging.h>
 #include <eigen_conversions/eigen_msg.h>
 #include <geometry_msgs/Pose.h>
-#include <mavlink_cpp/GCSv1.h>
+#include <mavlink_cpp/GCS.h>
 #include <ros/publisher.h>
 #include <ros/publisher.h>
 #include <ros/ros.h>
@@ -24,7 +24,7 @@ int main(int argc, char **argv) {
   log->SetLogLevel(debug);
   log->FlushLogOn(debug);
   uint16_t localPort = 14551;
-  std::shared_ptr<GCSv1> control(new GCSv1(localPort));
+  std::shared_ptr<GCS> control(new GCS(localPort));
 
   ros::init(argc, argv, "NEDPublisher");
   ros::NodeHandle nh;
