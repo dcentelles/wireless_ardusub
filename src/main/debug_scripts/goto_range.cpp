@@ -11,9 +11,7 @@
 #include <stdio.h>
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_listener.h>
-#include <wireless_ardusub/pid.h>
 
-using namespace wireless_ardusub;
 using namespace cpplogging;
 using namespace cpputils;
 

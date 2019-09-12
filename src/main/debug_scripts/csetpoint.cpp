@@ -4,6 +4,7 @@
 #include <chrono>
 #include <control/pid.h>
 #include <cpplogging/cpplogging.h>
+#include <cpputils/SignalManager.h>
 #include <dccomms/Utils.h>
 #include <dynamic_reconfigure/server.h>
 #include <eigen_conversions/eigen_msg.h>
@@ -20,15 +21,20 @@
 #include <thread>
 #include <wireless_ardusub/wireless_teleop_joyConfig.h>
 
+using namespace cpputils;
 using namespace mavlink_cpp;
 using namespace cpplogging;
 using namespace std::chrono_literals;
 using namespace telerobotics;
 using namespace control;
 
+struct Params {
+  bool sitl;
+};
+
 class OperatorController : public Logger {
 public:
-  OperatorController(ros::NodeHandle &nh);
+  OperatorController(ros::NodeHandle &nh, const Params &params);
   void Start();
 
 private:
@@ -59,14 +65,18 @@ private:
 
   dccomms::Timer timer;
 
+  // PID
   double vmax = 1000, vmin = -1000;
   PID yawPID, xPID, yPID, zPID;
+  double yoffset, xoffset, roffset, zoffset, deadband, baseZ, zoffsetPos;
+  // End PID
+
+  Params _params;
 
   // FUNCTIONS
   bool RisingEdge(const sensor_msgs::Joy::ConstPtr &joy, int index);
   void CmdTakeoffLand(bool takeoff);
   int8_t ComputeAxisValue(const sensor_msgs::Joy::ConstPtr &joy, int index);
-  uint16_t MapToPpm(double in);
   void ConfigCallback(wireless_ardusub::wireless_teleop_joyConfig &update,
                       uint32_t level);
   void JoyCallback(const sensor_msgs::Joy::ConstPtr &joy);
@@ -74,7 +84,6 @@ private:
   double keepHeadingIteration(const double &dt, double diff);
   double ArduSubXYR(double per);
   double ArduSubZ(double per);
-  void StopRobot();
   void Saturate(const double &max, const double &x, const double &y,
                 const double &z, double &vx, double &vy, double &vz);
   void GetLinearXVel(const double &dt, const double &diff, double &v);
@@ -86,7 +95,9 @@ private:
   std::thread _mainLoop;
 };
 
-OperatorController::OperatorController(ros::NodeHandle &nh) : _nh(nh) {
+OperatorController::OperatorController(ros::NodeHandle &nh,
+                                       const Params &params)
+    : _nh(nh) {
   // connect dynamic reconfigure
   dynamic_reconfigure::Server<
       wireless_ardusub::wireless_teleop_joyConfig>::CallbackType f;
@@ -118,10 +129,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh) : _nh(nh) {
   debugPublisher0 =
       _nh.advertise<merbots_whrov_msgs::debug>("/rov_controller", 1);
 
-  yawPID = PID(vmax, vmin, 10, 20, 0.05);
-  xPID = PID(vmax, vmin, 15, 60, 0.05);
-  yPID = PID(vmax, vmin, 15, 60, 0.05);
-  zPID = PID(vmax, vmin, 20, 10, 0.05);
+  _params = params;
 }
 
 void OperatorController::ConfigCallback(
@@ -131,6 +139,32 @@ void OperatorController::ConfigCallback(
 }
 
 void OperatorController::Start() {
+  if (_params.sitl) {
+    yawPID.SetConstants(vmax, vmin, 10, 20, 0.05);
+    xPID.SetConstants(vmax, vmin, 10, 60, 0.05);
+    yPID.SetConstants(vmax, vmin, 10, 60, 0.05);
+    zPID.SetConstants(vmax, vmin, 20, 10, 0.1);
+    baseZ = -77;
+    yoffset = 60;
+    xoffset = 60;
+    roffset = 400;
+    zoffset = 10;
+    deadband = 0;
+    zoffsetPos = 0;
+  } else {
+    yawPID.SetConstants(vmax, vmin, 10, 20, 0.05);
+    xPID.SetConstants(vmax, vmin, 15, 60, 0.05);
+    yPID.SetConstants(vmax, vmin, 15, 60, 0.05);
+    zPID.SetConstants(vmax, vmin, 20, 10, 0.05);
+    baseZ = 0;
+    yoffset = 90;
+    xoffset = 90;
+    roffset = 460;
+    zoffset = 10;
+    deadband = 0;
+    zoffsetPos = 100;
+  }
+
   _mainLoop = std::thread([this]() { Loop(); });
 }
 
@@ -206,18 +240,11 @@ void OperatorController::Loop() {
       double rdiff = tf::getYaw(erovRtarget);
       double rv0 = keepHeadingIteration(elapsedSecs, rdiff);
 
-      double baseZ = 0; //-38;
       double newZ = vz + baseZ;
       auto x = ceil(ArduSubXYR(vx));
       auto y = ceil(ArduSubXYR(vy));
       auto z = ceil(ArduSubZ(newZ));
       auto r = ceil(ArduSubXYR(rv0));
-
-      double yoffset = 90;
-      double xoffset = 90;
-      double roffset = 460;
-      double zoffset = 10;
-      double deadband = 0;
 
       if (y > deadband)
         y += yoffset;
@@ -230,7 +257,7 @@ void OperatorController::Loop() {
         x -= xoffset;
 
       if (z > 500)
-        z += 150;
+        z += zoffsetPos;
       else if (z < 500)
         z -= zoffset;
 
@@ -238,11 +265,6 @@ void OperatorController::Loop() {
         r += roffset + 5;
       else if (r < -deadband)
         r -= roffset;
-
-      //      if (r > 10)
-      //          z += roffset;
-      //      else if (r < -10)
-      //          z -= roffset;
 
       Info("Send order: X: {} ({}) ; Y: {} ({}) ; Z: {} ({}) ; R: {} ;  rdiff: "
            "{} ; rout: {} "
@@ -310,14 +332,6 @@ double OperatorController::keepHeadingIteration(const double &dt, double diff) {
   double vel = yawPID.calculate(dt, 0, -1 * diff);
 
   return vel;
-}
-
-void OperatorController::StopRobot() {
-  int x = ceil(ArduSubXYR(0));
-  int y = ceil(ArduSubXYR(0));
-  int z = ceil(ArduSubZ(0));
-  int r = ceil(ArduSubXYR(0));
-  control->SetManualControl(x, y, z, r);
 }
 
 void OperatorController::Saturate(const double &max, const double &x,
@@ -444,11 +458,29 @@ int main(int argc, char **argv) {
   log->SetAsyncMode();
 
   ros::init(argc, argv, "custom_setpoint");
-  ros::NodeHandle nh;
+  ros::NodeHandle nh("~");
   ros::Rate rate(10);
 
-  OperatorController op(nh);
+  Params params;
+  params.sitl = true;
+
+  nh.getParam("sitl", params.sitl);
+  if (params.sitl)
+    log->Info("Using params for SITL");
+  else
+    log->Info("Using params for HIL");
+
+  OperatorController op(nh, params);
   op.Start();
+
+  SignalManager::SetLastCallback(SIGINT, [&](int sig) {
+    printf("Received %d signal.\nFlushing log messages...", sig);
+    fflush(stdout);
+    log->FlushLog();
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+    printf("Log messages flushed.\n");
+    exit(0);
+  });
 
   while (1) {
     ros::spinOnce();

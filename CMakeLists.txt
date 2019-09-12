@@ -159,9 +159,6 @@ target_link_libraries(${ROV_V3} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${MAVLIN
 add_executable (NEDPublisher ${SRCPATH}main/debug_scripts/NEDPublisher.cpp)
 target_link_libraries(NEDPublisher ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
 
-add_executable (SITL_FDMReceiver ${SRCPATH}main/debug_scripts/SITL_FDMReceiver.cpp)
-target_link_libraries(SITL_FDMReceiver ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${TELEROBOTICS_GIT})
-
 add_executable (GPSInputTf ${SRCPATH}main/debug_scripts/GPSInputTf.cpp)
 target_link_libraries(GPSInputTf ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${TELEROBOTICS_GIT})
 
@@ -169,7 +166,7 @@ add_executable (goto_range ${SRCPATH}main/debug_scripts/goto_range.cpp)
 target_link_libraries(goto_range ${catkin_LIBRARIES} ${TELEROBOTICS_GIT})
 
 add_executable (csetpoint ${SRCPATH}main/debug_scripts/csetpoint.cpp)
-target_link_libraries(csetpoint ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${CONTROL_GIT})
+target_link_libraries(csetpoint ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${CONTROL_GIT} ${TELEROBOTICS_GIT})
 
 add_executable (tfToPosePublisher ${SRCPATH}main/debug_scripts/TfToPosePublisher.cpp)
 target_link_libraries(tfToPosePublisher ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
