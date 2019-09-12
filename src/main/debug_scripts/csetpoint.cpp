@@ -2,6 +2,7 @@
 #include <GeographicLib/Geoid.hpp>
 #include <GeographicLib/LocalCartesian.hpp>
 #include <chrono>
+#include <control/pid.h>
 #include <cpplogging/cpplogging.h>
 #include <dccomms/Utils.h>
 #include <dynamic_reconfigure/server.h>
@@ -17,13 +18,13 @@
 #include <tf/transform_listener.h>
 #include <tf2_ros/static_transform_broadcaster.h>
 #include <thread>
-#include <wireless_ardusub/pid.h>
 #include <wireless_ardusub/wireless_teleop_joyConfig.h>
 
 using namespace mavlink_cpp;
 using namespace cpplogging;
 using namespace std::chrono_literals;
 using namespace telerobotics;
+using namespace control;
 
 class OperatorController : public Logger {
 public:
@@ -59,10 +60,7 @@ private:
   dccomms::Timer timer;
 
   double vmax = 1000, vmin = -1000;
-  wireless_ardusub::PID yawPID = wireless_ardusub::PID(vmax, vmin, 10, 20, 0.05),
-                        xPID = wireless_ardusub::PID(vmax, vmin, 15, 60, 0.05),
-                        yPID = wireless_ardusub::PID(vmax, vmin, 15, 60, 0.05),
-                        zPID = wireless_ardusub::PID(vmax, vmin, 20, 10, 0.05);
+  PID yawPID, xPID, yPID, zPID;
 
   // FUNCTIONS
   bool RisingEdge(const sensor_msgs::Joy::ConstPtr &joy, int index);
@@ -119,6 +117,11 @@ OperatorController::OperatorController(ros::NodeHandle &nh) : _nh(nh) {
 
   debugPublisher0 =
       _nh.advertise<merbots_whrov_msgs::debug>("/rov_controller", 1);
+
+  yawPID = PID(vmax, vmin, 10, 20, 0.05);
+  xPID = PID(vmax, vmin, 15, 60, 0.05);
+  yPID = PID(vmax, vmin, 15, 60, 0.05);
+  zPID = PID(vmax, vmin, 20, 10, 0.05);
 }
 
 void OperatorController::ConfigCallback(
@@ -222,26 +225,24 @@ void OperatorController::Loop() {
         y -= yoffset;
 
       if (x > deadband)
-          x += xoffset;
+        x += xoffset;
       else if (x < -deadband)
-          x -= xoffset;
+        x -= xoffset;
 
       if (z > 500)
-          z += 150;
+        z += 150;
       else if (z < 500)
-          z -= zoffset;
+        z -= zoffset;
 
       if (r > deadband)
-          r += roffset + 5;
+        r += roffset + 5;
       else if (r < -deadband)
-          r -= roffset;
+        r -= roffset;
 
-
-//      if (r > 10)
-//          z += roffset;
-//      else if (r < -10)
-//          z -= roffset;
-
+      //      if (r > 10)
+      //          z += roffset;
+      //      else if (r < -10)
+      //          z -= roffset;
 
       Info("Send order: X: {} ({}) ; Y: {} ({}) ; Z: {} ({}) ; R: {} ;  rdiff: "
            "{} ; rout: {} "

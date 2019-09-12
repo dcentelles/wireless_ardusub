@@ -113,6 +113,7 @@ SET(${PROJECT_NAME}_INCLUDE_DIRS
     modules
     ${${TELEROBOTICS_GIT}_INCLUDE_DIRS}
     ${${MAVLINK_CPP_GIT}_INCLUDE_DIRS}
+    ${${CONTROL_GIT}_INCLUDE_DIRS}
     )
 
 
@@ -122,11 +123,11 @@ add_definitions(-fPIC -std=c++14)
 include_directories(
   ${${PROJECT_NAME}_INCLUDE_DIRS}
 )
-SET(${PROJECT_NAME}_CPP_FILES
-    ${SRCPATH}lib/src/pid.cpp
-                        )
+#SET(${PROJECT_NAME}_CPP_FILES
+#    ${SRCPATH}lib/src/pid.cpp
+#)
 
-add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
+#add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
 #target_link_libraries(${PROJECT_NAME} ${TELEROBOTICS_GIT})
 
 SET(ROV_V1 rov_v1)
@@ -153,7 +154,7 @@ add_executable (${OP_V3} ${SRCPATH}main/control_v3/operator_control_v3.cpp)
 target_link_libraries(${OP_V3} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES})
 add_dependencies(${OP_V3} ${PROJECT_NAME}_gencfg)
 add_executable (${ROV_V3} ${SRCPATH}main/control_v3/rov_control_v3.cpp)
-target_link_libraries(${ROV_V3} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${PROJECT_NAME})
+target_link_libraries(${ROV_V3} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${CONTROL_GIT})
 
 add_executable (NEDPublisher ${SRCPATH}main/debug_scripts/NEDPublisher.cpp)
 target_link_libraries(NEDPublisher ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
@@ -164,20 +165,17 @@ target_link_libraries(SITL_FDMReceiver ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${
 add_executable (GPSInputTf ${SRCPATH}main/debug_scripts/GPSInputTf.cpp)
 target_link_libraries(GPSInputTf ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${TELEROBOTICS_GIT})
 
-add_executable (pid_0 ${SRCPATH}main/debug_scripts/pid_0.cpp)
-target_link_libraries(pid_0 ${PROJECT_NAME})
-
 add_executable (goto_range ${SRCPATH}main/debug_scripts/goto_range.cpp)
 target_link_libraries(goto_range ${catkin_LIBRARIES} ${TELEROBOTICS_GIT})
 
 add_executable (csetpoint ${SRCPATH}main/debug_scripts/csetpoint.cpp)
-target_link_libraries(csetpoint ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${PROJECT_NAME})
+target_link_libraries(csetpoint ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${CONTROL_GIT})
 
 add_executable (tfToPosePublisher ${SRCPATH}main/debug_scripts/TfToPosePublisher.cpp)
-target_link_libraries(tfToPosePublisher ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${PROJECT_NAME})
+target_link_libraries(tfToPosePublisher ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
 
 add_executable (tfToEkf ${SRCPATH}main/debug_scripts/tfToEkf.cpp)
-target_link_libraries(tfToEkf ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${PROJECT_NAME})
+target_link_libraries(tfToEkf ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
 
 install(TARGETS ${ROVA}
         LIBRARY DESTINATION "lib"
@@ -191,6 +189,7 @@ catkin_package(
     ${PROJECT_NAME}
     ${${TELEROBOTICS_GIT}_LIBRARIES}
     ${${MAVLINK_CPP_GIT}_LIBRARIES}
+    ${${CONTROL_GIT}_LIBRARIES}
    INCLUDE_DIRS
     ${${PROJECT_NAME}_INCLUDE_DIRS}
    CATKIN_DEPENDS
