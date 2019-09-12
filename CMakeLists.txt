@@ -123,12 +123,13 @@ add_definitions(-fPIC -std=c++14)
 include_directories(
   ${${PROJECT_NAME}_INCLUDE_DIRS}
 )
-#SET(${PROJECT_NAME}_CPP_FILES
-#    ${SRCPATH}lib/src/pid.cpp
-#)
+SET(${PROJECT_NAME}_CPP_FILES
+    ${SRCPATH}lib/OperatorController.cpp
+    ${SRCPATH}lib/JoyController.cpp
+)
 
-#add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
-#target_link_libraries(${PROJECT_NAME} ${TELEROBOTICS_GIT})
+add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
+target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
 
 SET(ROV_V1 rov_v1)
 SET(OP_V1 op_v1)
@@ -166,7 +167,7 @@ add_executable (goto_range ${SRCPATH}main/debug_scripts/goto_range.cpp)
 target_link_libraries(goto_range ${catkin_LIBRARIES} ${TELEROBOTICS_GIT})
 
 add_executable (csetpoint ${SRCPATH}main/debug_scripts/csetpoint.cpp)
-target_link_libraries(csetpoint ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${CONTROL_GIT} ${TELEROBOTICS_GIT})
+target_link_libraries(csetpoint ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${PROJECT_NAME} ${CONTROL_GIT} ${TELEROBOTICS_GIT})
 
 add_executable (tfToPosePublisher ${SRCPATH}main/debug_scripts/TfToPosePublisher.cpp)
 target_link_libraries(tfToPosePublisher ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT})
