@@ -29,13 +29,22 @@ public:
   ControlState ControlState;
   std::shared_ptr<GCS> Control;
 
+  void ResetPID();
+  void SetTfMode(const bool &tfmode);
+  void SetReferenceTfName(const std::string &ref);
+  void SetRobotTfName(const std::string &ref);
+  void SetDesiredPosTfName(const std::string &ref);
+
+  void SetnedMerov(const tf::Transform & transform);
+  void SetnedMtarget(const tf::Transform & transform);
+
 private:
   tf::TransformListener listener;
   geometry_msgs::TransformStamped static_transformStamped;
   std::vector<geometry_msgs::TransformStamped> static_transforms;
 
-  tf::StampedTransform nedMerov, nedMtarget, cameraMrov;
-  tf::Transform rovMtarget;
+  tf::StampedTransform cameraMrov;
+  tf::Transform rovMtarget, _nedMtarget, _nedMerov;
   tf::Transform rovMned;
   ros::Publisher debugPublisher0;
 
@@ -50,6 +59,8 @@ private:
   Params _params;
   std::string _ref_tf, _robot_tf, _desired_robot_tf;
 
+  bool tfMode = true;
+
   // FUNCTIONS
   double keepHeadingIteration(const double &dt, double diff);
   double ArduSubXYR(double per);
@@ -60,12 +71,15 @@ private:
   void GetLinearYVel(const double &dt, const double &diff, double &v);
   void GetLinearZVel(const double &dt, const double &diff, double &v);
   void Loop();
-  void ResetPID();
-  void SetReferenceTfName(const std::string &ref);
-  void SetRobotTfName(const std::string &ref);
-  void SetDesiredPosTfName(const std::string &ref);
+
+  bool GetnedMerov(tf::StampedTransform &);
+  bool GetnedMtarget(tf::StampedTransform &);
 
   std::thread _mainLoop;
+  bool nedMerovUpdated = false, nedMtargetUpdated = false;
+
+  std::mutex nedMerov_mutex, nedMtarget_mutex;
+  std::condition_variable nedMerov_cond, nedMtarget_cond;
 };
 
 } // namespace wireless_ardusub

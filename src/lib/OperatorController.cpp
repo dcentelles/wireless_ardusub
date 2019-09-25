@@ -1,3 +1,4 @@
+#include <chrono>
 #include <control/pid.h>
 #include <cpputils/Timer.h>
 #include <mavlink_cpp/GCS.h>
@@ -82,8 +83,55 @@ void OperatorController::ResetPID() {
   timer.Reset();
 }
 
+void OperatorController::SetTfMode(const bool &tfmode) { tfMode = tfmode; }
+
+void OperatorController::SetnedMerov(const tf::Transform &transform) {
+  std::unique_lock<std::mutex> lock(nedMerov_mutex);
+  _nedMerov = transform;
+  nedMerovUpdated = true;
+  nedMerov_cond.notify_all();
+}
+
+void OperatorController::SetnedMtarget(const tf::Transform &transform) {
+  std::unique_lock<std::mutex> lock(nedMtarget_mutex);
+  _nedMtarget = transform;
+  nedMtargetUpdated = true;
+  nedMtarget_cond.notify_all();
+}
+
+bool OperatorController::GetnedMerov(tf::StampedTransform &transform) {
+  std::unique_lock<std::mutex> lock(nedMerov_mutex);
+  if (!nedMerovUpdated) {
+    nedMerov_cond.wait_for(lock, std::chrono::milliseconds(200));
+  }
+  if (nedMerovUpdated) {
+    transform =
+        tf::StampedTransform(_nedMerov, ros::Time::now(), _ref_tf, _robot_tf);
+    nedMerovUpdated = false;
+    return true;
+  }
+  return false;
+}
+
+bool OperatorController::GetnedMtarget(tf::StampedTransform &transform) {
+  std::unique_lock<std::mutex> lock(nedMtarget_mutex);
+  if (!nedMtargetUpdated) {
+    nedMtarget_cond.wait_for(lock, std::chrono::milliseconds(200));
+  }
+  if (nedMtargetUpdated) {
+    transform = tf::StampedTransform(_nedMtarget, ros::Time::now(), _ref_tf,
+                                     _desired_robot_tf);
+    nedMtargetUpdated = false;
+    return true;
+  }
+  return false;
+}
+
 void OperatorController::Loop() {
   bool manual = true;
+  tf::Transform rovMtarget;
+  tf::Transform rovMned;
+  tf::StampedTransform nedMerov, nedMtarget;
 
   double tyaw, cyaw;
   while (ros::ok()) {
@@ -92,15 +140,20 @@ void OperatorController::Loop() {
         ResetPID();
         manual = false;
       }
-      try {
-        listener.lookupTransform(_ref_tf, _robot_tf, ros::Time(0), nedMerov);
-        listener.lookupTransform(_ref_tf, _desired_robot_tf, ros::Time(0),
-                                 nedMtarget);
-      } catch (tf::TransformException &ex) {
-        Warn("TF: {}", ex.what());
-        Control->Arm(false);
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        continue;
+      if (tfMode) {
+        try {
+          listener.lookupTransform(_ref_tf, _robot_tf, ros::Time(0), nedMerov);
+          listener.lookupTransform(_ref_tf, _desired_robot_tf, ros::Time(0),
+                                   nedMtarget);
+        } catch (tf::TransformException &ex) {
+          Warn("TF: {}", ex.what());
+          Control->Arm(false);
+          std::this_thread::sleep_for(std::chrono::milliseconds(50));
+          continue;
+        }
+      } else {
+        if (!GetnedMerov(nedMerov) || !GetnedMtarget(nedMtarget))
+          continue;
       }
       Control->SetFlyMode(FLY_MODE_R::STABILIZE);
       Control->Arm(true);
