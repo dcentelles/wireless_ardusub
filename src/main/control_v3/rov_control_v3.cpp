@@ -800,6 +800,11 @@ int main(int argc, char **argv) {
     tf::Quaternion nedRerov;
     merbots_whrov_msgs::debug debugMsg;
 
+    yawPID.SetConstants(vmax, vmin, 10, 20, 0.05);
+    xPID.SetConstants(vmax, vmin, 10, 60, 0.05);
+    yPID.SetConstants(vmax, vmin, 10, 60, 0.05);
+    zPID.SetConstants(vmax, vmin, 20, 10, 0.1);
+
     double tyaw, cyaw, croll, cpitch;
     bool firstPIDIteration = true;
     while (1) {
@@ -876,38 +881,39 @@ int main(int argc, char **argv) {
         double rdiff = tf::getYaw(erovRtarget);
         double rv0 = keepHeadingIteration(elapsedSecs, rdiff);
 
-        double baseZ = 0; //-38;
+        double baseZ = -77;
         double newZ = vz + baseZ;
         auto x = ceil(ArduSubXYR(vx));
         auto y = ceil(ArduSubXYR(vy));
         auto z = ceil(ArduSubZ(newZ));
         auto r = ceil(ArduSubXYR(rv0));
 
-        double yoffset = 90;
-        double xoffset = 90;
-        double roffset = 460;
+        double yoffset = 60;
+        double xoffset = 60;
+        double roffset = 400;
         double zoffset = 10;
         double deadband = 0;
+        double zoffsetPos = 0;
 
         if (y > deadband)
-          y += yoffset;
+            y += yoffset;
         else if (y < -deadband)
-          y -= yoffset;
+            y -= yoffset;
 
         if (x > deadband)
-          x += xoffset;
+            x += xoffset;
         else if (x < -deadband)
-          x -= xoffset;
+            x -= xoffset;
 
         if (z > 500)
-          z += 150;
+            z += zoffsetPos;
         else if (z < 500)
-          z -= zoffset;
+            z -= zoffset;
 
         if (r > deadband)
-          r += roffset + 5;
+            r += roffset + 5;
         else if (r < -deadband)
-          r -= roffset;
+            r -= roffset;
 
         debugMsg.pout_yaw = r;
         debugMsg.pout_x = x;
