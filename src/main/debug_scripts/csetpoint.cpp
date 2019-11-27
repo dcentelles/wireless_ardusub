@@ -6,10 +6,10 @@
 #include <tf/transform_listener.h>
 #include <thread>
 #include <wireless_ardusub/JoyController.h>
-#include <wireless_ardusub/OperatorController.h>
+#include <mavlink_ros/OperatorController.h>
 
 using namespace cpputils;
-using namespace mavlink_cpp;
+using namespace mavlink_ros;
 using namespace cpplogging;
 using namespace std::chrono_literals;
 using namespace control;

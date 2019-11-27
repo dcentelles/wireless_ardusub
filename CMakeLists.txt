@@ -26,6 +26,7 @@ find_package(catkin REQUIRED COMPONENTS
   image_utils_ros_msgs
   mavros
   tf_conversions
+  mavlink_ros
 )
 
 #find_package(catkin REQUIRED dynamic_reconfigure)
@@ -124,7 +125,6 @@ include_directories(
   ${${PROJECT_NAME}_INCLUDE_DIRS}
 )
 SET(${PROJECT_NAME}_CPP_FILES
-    ${SRCPATH}lib/OperatorController.cpp
     ${SRCPATH}lib/JoyController.cpp
 )
 
@@ -135,8 +135,6 @@ SET(ROV_V2 rov_v2)
 SET(OP_V2 op_v2)
 SET(ROV_V3 rov_v3)
 SET(OP_V3 op_v3)
-SET(ROV_V4 rov_v4)
-SET(OP_V4 op_v4)
 
 add_executable (${OP_V2} ${SRCPATH}main/control_v2/operator_control_v2.cpp)
 target_link_libraries(${OP_V2} ${TELEROBOTICS_GIT} ${catkin_LIBRARIES})
@@ -194,6 +192,7 @@ catkin_package(
     sensor_msgs
     sensor_msgs
     tf_conversions
+    mavlink_ros
 )
 
 roslaunch_add_file_check(launch)
