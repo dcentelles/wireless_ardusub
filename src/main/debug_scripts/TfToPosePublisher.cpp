@@ -13,12 +13,12 @@ using namespace cpplogging;
 using namespace std::chrono_literals;
 
 int main(int argc, char **argv) {
-  auto log = CreateLogger("GCS");
+  auto log = CreateLogger("TfToPosePublisher");
   log->SetLogLevel(debug);
   log->FlushLogOn(debug);
 
   ros::init(argc, argv, "TfToPosePublisher");
-  ros::NodeHandle nh;
+  ros::NodeHandle nh("~");
 
   std::mutex rotlock;
   tf::TransformListener listener;
@@ -26,43 +26,28 @@ int main(int argc, char **argv) {
   geometry_msgs::TransformStamped static_transformStamped;
   std::vector<geometry_msgs::TransformStamped> static_transforms;
 
+  std::string target_tf = "erov", target_topic = "/bluerov2/pose";
   tf::StampedTransform cameraMrov, wMrov;
   ros::Rate rate(30);
-  while (1) {
-    try {
-      listener.lookupTransform("bluerov2_camera", "hil", ros::Time(0),
-                               cameraMrov);
-      static_transformStamped.header.stamp = ros::Time::now();
-      static_transformStamped.header.frame_id = "camera";
-      static_transformStamped.child_frame_id = "erov";
-      static_transformStamped.transform.translation.x =
-          cameraMrov.getOrigin().getX();
-      static_transformStamped.transform.translation.y =
-          cameraMrov.getOrigin().getY();
-      static_transformStamped.transform.translation.z =
-          cameraMrov.getOrigin().getZ();
-      static_transformStamped.transform.rotation.x =
-          cameraMrov.getRotation().x();
-      static_transformStamped.transform.rotation.y =
-          cameraMrov.getRotation().y();
-      static_transformStamped.transform.rotation.z =
-          cameraMrov.getRotation().z();
-      static_transformStamped.transform.rotation.w =
-          cameraMrov.getRotation().w();
-      static_transforms.push_back(static_transformStamped);
-      break;
-    } catch (tf::TransformException &ex) {
-      log->Warn("TF: {}", ex.what());
-      rate.sleep();
-    }
+
+  if (!nh.getParam("target_tf", target_tf)) {
+      log->Info("target_tf set to default => {}", target_tf);
+  } else {
+      log->Info("target_tf: {}", target_tf);
   }
-  static_broadcaster.sendTransform(static_transforms);
+
+  if (!nh.getParam("target_topic", target_topic)) {
+      log->Info("target_topic set to default => {}", target_topic);
+  } else {
+      log->Info("target_topic: {}", target_topic);
+  }
+
   ros::Publisher bluerov2Pub;
-  bluerov2Pub = nh.advertise<geometry_msgs::Pose>("/bluerov2/pose", 1);
+  bluerov2Pub = nh.advertise<geometry_msgs::Pose>(target_topic, 1);
 
   while (ros::ok()) {
     try {
-      listener.lookupTransform("world", "erov_ekf", ros::Time(0), wMrov);
+      listener.lookupTransform("world", target_tf, ros::Time(0), wMrov);
     } catch (tf::TransformException &ex) {
       log->Warn("TF: {}", ex.what());
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
