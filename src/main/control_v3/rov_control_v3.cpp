@@ -106,6 +106,7 @@ struct PoseRegister {
 };
 
 static bool communication_lost = false;
+static bool position_lost = false;
 static std::list<PoseRegister> poseStack;
 static int maxPoseStackSize = 4096;
 static ros::Publisher pose_pub;
@@ -330,18 +331,16 @@ void handleNewOrder() {
   }
 }
 
-void arm(bool v) {
-  // We avoid set control->Arm(false) because there is a bug in the ArduSub
+void arm(bool arm) {
+  // TODO: If we use SITL GPS We must avoid set control->Arm(false) because there is a bug in the ArduSub
   // firmware
   // that adds an offset to the NED position when rearming.
-  if (v) {
-    gcs->Arm(true);
-  } else {
-    // control->Arm(false);
-    stopRobot();
-    gcs->SetFlyMode(FLY_MODE_R::MANUAL);
+  armed = ((guidedMode && !position_lost) || !guidedMode) && !communication_lost && arm;
+  if (!armed) {
+     stopRobot();
+     gcs->SetFlyMode(FLY_MODE_R::MANUAL);
   }
-  armed = v;
+  gcs->Arm(armed);
 }
 void messageSenderWork() {
   while (1) {
@@ -379,21 +378,14 @@ void operatorMsgParserWork() {
     while (!currentOperatorMessage_updated) {
       currentOperatorMessage_cond.wait_for(lock, chrono::milliseconds(5000));
       if (!currentOperatorMessage_updated && !commsNode->HoldingChannel()) {
-        if (!lastReceivedMode != ARDUSUB_NAV_MODE::NAV_GUIDED) {
-          //          arm(false);
-          //          Log->Warn("Heartbeat lost. Stopping robot to avoid
-          //          thruster "
-          //                    "interferences!");
-          Log->Warn("Heartbeat lost! Considering communication lost and "
-                    "launching pose recovery");
-        }
-        // control->SetFlyMode(FLY_MODE_R::GUIDED);
-        // communication_lost = true;
-        gcs->SetFlyMode(FLY_MODE_R::MANUAL);
-        stopRobot();
+          Log->Warn("Heartbeat lost! Force disarm");
+          communication_lost = true;
+      }
+      else
+      {
+          communication_lost = false;
       }
     }
-    communication_lost = false;
     currentOperatorMessage_updated = false;
 
     OperatorMessageV2::OrderType lastOrderType =
@@ -813,11 +805,11 @@ int main(int argc, char **argv) {
                                  nedMerov);
       } catch (tf::TransformException &ex) {
         Log->Warn("TF: {}", ex.what());
-        gcs->Arm(false);
+        position_lost = true;
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         continue;
       }
-
+      position_lost = false;
       ned_mutex.lock();
 
       ned_x = nedMerov.getOrigin().getX();
