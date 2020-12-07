@@ -23,6 +23,8 @@
 #include <merbots_whrov_msgs/debug.h>
 #include <tf_conversions/tf_eigen.h>
 
+#include <mavlink_ros/OperatorController.h>
+
 using namespace cpplogging;
 using namespace std::chrono_literals;
 using namespace telerobotics;
@@ -32,6 +34,7 @@ using namespace telerobotics;
 using namespace control;
 
 struct Params {
+  mavlink_ros::OperatorController::Params controller_params;
   std::string serialPort, masterUri, dccommsId;
   bool log2Console, log2File;
 };
@@ -43,8 +46,7 @@ struct HROVPose {
 static LoggerPtr Log;
 static Params params;
 
-static uint16_t localPort = 14550;
-static dccomms::Ptr<GCS> gcs = dccomms::CreateObject<GCS>(localPort);
+static dccomms::Ptr<mavlink_ros::OperatorController> controller;
 
 static dccomms::Ptr<OperatorMessageV2> currentOperatorMessage =
     dccomms::CreateObject<OperatorMessageV2>();
@@ -52,10 +54,6 @@ static bool currentOperatorMessage_updated;
 static std::mutex currentOperatorMessage_mutex;
 static std::condition_variable currentOperatorMessage_cond;
 static TeleopOrderPtr lastOrder;
-static int xVel;
-static int yVel;
-static int zVel;
-static int rVel;
 
 static dccomms::Ptr<HROVMessageV2> currentHROVMessageV2 =
     dccomms::CreateObject<HROVMessageV2>();
@@ -152,33 +150,13 @@ void notifyROVReady() {
   currentHROVMessage_mutex.unlock();
 }
 
-static double vmax = 1000, vmin = -1000;
-static PID yawPID = PID(vmax, vmin, 10, 20, 0.05),
-           xPID = PID(vmax, vmin, 15, 60, 0.05),
-           yPID = PID(vmax, vmin, 15, 60, 0.05),
-           zPID = PID(vmax, vmin, 20, 10, 0.05);
-
-//    yawPID = wireless_ardusub::PID(vmax, vmin, 15, 20,
-//                                                            0.05),
-//                             xPID =
-//                                 wireless_ardusub::PID(vmax, vmin, 10, 20,
-//                                 0.4),
-//                             yPID =
-//                                 wireless_ardusub::PID(vmax, vmin, 10, 20,
-//                                 0.4),
-//                             zPID =
-//                                 wireless_ardusub::PID(vmax, vmin, 10, 10,
-//                                 0.4);
+// static double vmax = 1000, vmin = -1000;
+// static PID yawPID = PID(vmax, vmin, 10, 20, 0.05),
+//           xPID = PID(vmax, vmin, 15, 60, 0.05),
+//           yPID = PID(vmax, vmin, 15, 60, 0.05),
+//           zPID = PID(vmax, vmin, 20, 10, 0.05);
 
 static dccomms::Timer timer;
-
-void ResetPID() {
-  yawPID.Reset();
-  xPID.Reset();
-  yPID.Reset();
-  zPID.Reset();
-  timer.Reset();
-}
 
 // from -127,127  to -100,100
 double getJoyAxisNormalized(int x) { return 200. / 256 * x; }
@@ -187,23 +165,16 @@ double ArduSubXYR(double per) { return per * 10; }
 double ArduSubZ(double per) { return (per + 100) / 0.2; }
 
 void stopRobot() {
-  int x = ceil(ArduSubXYR(0));
-  int y = ceil(ArduSubXYR(0));
-  int z = ceil(ArduSubZ(0));
-  int r = ceil(ArduSubXYR(0));
-  gcs->SetManualControl(x, y, z, r);
-}
-
-void moveYaw(double per) {
-  if (lastOrder) {
-    rVel = ceil(ArduSubXYR(per));
-    gcs->SetManualControl(xVel, yVel, zVel, rVel);
-  }
+  controller->ControlState.x = 0;
+  controller->ControlState.y = 0;
+  controller->ControlState.z = 0;
+  controller->ControlState.r = 0;
 }
 
 static tf::Transform nedMtarget;
 static bool guidedMode = false;
 static bool goToMission = false;
+static bool runningMission = false;
 static std::mutex goToMission_mutex;
 static std::condition_variable goToMission_cond;
 
@@ -243,13 +214,14 @@ void cancelLastOrder() {
 }
 
 void sendGoToLocalNED(double x, double y, double z, double yaw) {
-
+  std::unique_lock<std::mutex> lock(goToMission_mutex);
   tf::Quaternion ned_orientation;
   ned_orientation.setRPY(0, 0, yaw);
   tf::Vector3 ned_position(x, y, z);
   nedMtarget.setOrigin(ned_position);
   nedMtarget.setRotation(ned_orientation.normalize());
   goToMission = true;
+  runningMission = false;
 }
 
 void handleNewOrder() {
@@ -332,15 +304,16 @@ void handleNewOrder() {
 }
 
 void arm(bool arm) {
-  // TODO: If we use SITL GPS We must avoid set control->Arm(false) because there is a bug in the ArduSub
-  // firmware
-  // that adds an offset to the NED position when rearming.
-  armed = ((guidedMode && !position_lost) || !guidedMode) && !communication_lost && arm;
+  // TODO: If we use SITL GPS We must avoid set control->Arm(false) because
+  // there is a bug in the ArduSub firmware that adds an offset to the NED
+  // position when rearming.
+  armed = ((guidedMode && !position_lost) || !guidedMode) &&
+          !communication_lost && arm;
   if (!armed) {
-     stopRobot();
-     gcs->SetFlyMode(FLY_MODE_R::MANUAL);
+    stopRobot();
+    controller->ControlState.mode = FLY_MODE_R::MANUAL;
   }
-  gcs->Arm(armed);
+  controller->ControlState.arm = armed;
 }
 void messageSenderWork() {
   while (1) {
@@ -378,12 +351,10 @@ void operatorMsgParserWork() {
     while (!currentOperatorMessage_updated) {
       currentOperatorMessage_cond.wait_for(lock, chrono::milliseconds(5000));
       if (!currentOperatorMessage_updated && !commsNode->HoldingChannel()) {
-          Log->Warn("Heartbeat lost! Force disarm");
-          communication_lost = true;
-      }
-      else
-      {
-          communication_lost = false;
+        Log->Warn("Heartbeat lost! Force disarm");
+        communication_lost = true;
+      } else {
+        communication_lost = false;
       }
     }
     currentOperatorMessage_updated = false;
@@ -400,36 +371,28 @@ void operatorMsgParserWork() {
         switch (lastReceivedMode) {
         case ARDUSUB_NAV_MODE::NAV_DEPTH_HOLD:
           modeName = "DEPTH HOLD";
-          gcs->SetDepthHoldMode();
+          controller->ControlState.mode = FLY_MODE_R::DEPTH_HOLD;
           break;
         case ARDUSUB_NAV_MODE::NAV_STABILIZE:
           modeName = "STABILIZE";
-          gcs->SetStabilizeMode();
+          controller->ControlState.mode = FLY_MODE_R::STABILIZE;
           break;
         case ARDUSUB_NAV_MODE::NAV_MANUAL:
           modeName = "MANUAL";
-          gcs->SetManualMode();
+          controller->ControlState.mode = FLY_MODE_R::MANUAL;
           break;
         case ARDUSUB_NAV_MODE::NAV_POS_HOLD:
           modeName = "POS HOLD";
-          gcs->SetFlyMode(FLY_MODE_R::POS_HOLD);
+          controller->ControlState.mode = FLY_MODE_R::POS_HOLD;
           break;
         case ARDUSUB_NAV_MODE::NAV_GUIDED:
           modeName = "GUIDED";
           guidedMode = true;
-          // control->SetManualMode();
-          gcs->SetStabilizeMode();
-          if (currentMode != ARDUSUB_NAV_MODE::NAV_GUIDED) {
-            ResetPID();
-          }
           break;
         default:
           break;
         }
-        Log->Info(
-            "Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
-            lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
-            lastOrder->GetR(), lastOrder->Arm() ? "true" : "false", modeName);
+
         int x = lastOrder->GetX();
         int y = lastOrder->GetY();
         int z = lastOrder->GetZ();
@@ -438,28 +401,31 @@ void operatorMsgParserWork() {
         // z control: y = 200/1000x - 100
         // x,y and r control: y = 200/2000x
 
+        Log->Info(
+            "Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
+            lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
+            lastOrder->GetR(), lastOrder->Arm() ? "true" : "false", modeName);
+
         double xNorm = getJoyAxisNormalized(x);
         double yNorm = getJoyAxisNormalized(y);
         double zNorm = getJoyAxisNormalized(z);
-        double rNorm = getJoyAxisNormalized(r);
-
-        xVel = ceil(ArduSubXYR(xNorm));
-        yVel = ceil(ArduSubXYR(yNorm));
-        zVel = ceil(ArduSubZ(zNorm));
-        if (!keepOrientation)
-          rVel = ceil(ArduSubXYR(rNorm));
-
-        //        Log->Info("Manual control: X: {} ; Y: {} ; Z: {} ; R: {} ;
-        //        Arm: {} ; "
-        //                  "Mode  : {} ",
-        //                  xVel, yVel, zVel, rVel, lastOrder->Arm() ? "true" :
-        //                  "false",
-        //                  modeName);
 
         if (lastReceivedMode != ARDUSUB_NAV_MODE::NAV_GUIDED) {
           guidedMode = false;
           goToMission = false;
-          gcs->SetManualControl(xVel, yVel, zVel, rVel);
+          controller->ControlState.x = xNorm;
+          controller->ControlState.y = yNorm;
+          controller->ControlState.z = zNorm;
+
+          if (!keepOrientation) {
+            double rNorm = getJoyAxisNormalized(r);
+            controller->ControlState.r = rNorm;
+          }
+          //        Log->Info("Manual control: X: {} ; Y: {} ; Z: {} ; R: {} ;
+          //        Arm: {} ; "
+          //                  "Mode  : {} ",
+          //                  xVel, yVel, zVel, rVel, lastOrder->Arm() ? "true"
+          //                  : "false", modeName);
         }
       }
     } else {
@@ -629,9 +595,9 @@ void initROSInterface(int argc, char **argv) {
   debugPublisher0 =
       nh.advertise<merbots_whrov_msgs::debug>("/rov_controller", 1);
 
-  gcs->SetVfrHudCb(handleNewHUDData);
-  gcs->SetAttitudeCb(handleNewNavigationData);
-  gcs->SetHeartbeatCb(handleNewArdusubState);
+  controller->Control->SetVfrHudCb(handleNewHUDData);
+  controller->Control->SetAttitudeCb(handleNewNavigationData);
+  controller->Control->SetHeartbeatCb(handleNewArdusubState);
 }
 
 int getParams() {
@@ -642,6 +608,18 @@ int getParams() {
     params.dccommsId = dccommsId;
   } else
     params.dccommsId = "rov";
+
+  bool sitl = true;
+  if (!nh.getParam("sitl", sitl)) {
+    Log->Info("sitl set to default => {}", sitl);
+  } else {
+    Log->Info("sitl: {}", sitl);
+  }
+  params.controller_params.sitl = sitl;
+  params.controller_params.use_tf = true;
+  params.controller_params.ref_tf = "local_origin_ned";
+  params.controller_params.robot_tf = "erov";
+  params.controller_params.desired_robot_tf = "rov_target";
 
   std::string serialPort;
   if (!nh.getParam("port", serialPort)) {
@@ -683,21 +661,6 @@ int getParams() {
   return 0;
 }
 
-double keepHeadingIteration(const double &dt, double diff) {
-  double vel = yawPID.calculate(dt, 0, -1 * diff);
-  return vel;
-}
-
-void GetLinearXVel(const double &dt, const double &diffx, double &vx) {
-  vx = xPID.calculate(dt, 0, -diffx);
-}
-void GetLinearYVel(const double &dt, const double &diffy, double &vy) {
-  vy = yPID.calculate(dt, 0, -diffy);
-}
-void GetLinearZVel(const double &dt, const double &diffz, double &vz) {
-  vz = zPID.calculate(dt, 0, -diffz);
-}
-
 int main(int argc, char **argv) {
   Log = CreateLogger("ROVMain");
   Log->Info("Init");
@@ -709,16 +672,19 @@ int main(int argc, char **argv) {
   if (getParams())
     return 1;
 
+  controller =
+      CreateObject<mavlink_ros::OperatorController>(params.controller_params);
+
   Log->SetLogLevel(cpplogging::LogLevel::info);
   // Log->FlushLogOn(cpplogging::LogLevel::info);
   Log->LogToConsole(params.log2Console);
 
-  gcs->SetLogName("GCS");
-  gcs->SetAsyncMode();
-  gcs->SetLogLevel(info);
+  controller->Control->SetLogName("GCS");
+  controller->Control->SetAsyncMode();
+  controller->Control->SetLogLevel(info);
   arm(false);
-  gcs->LogToConsole(params.log2Console);
-  gcs->EnableGPSMock(false);
+  controller->Control->LogToConsole(params.log2Console);
+  controller->Control->EnableGPSMock(false);
 
   initROSInterface(argc, argv);
   startWorkers();
@@ -731,7 +697,7 @@ int main(int argc, char **argv) {
     Log->SetLogFormatter(
         std::make_shared<spdlog::pattern_formatter>("%D %T.%F %v"));
     Log->LogToFile("rov_v3_control");
-    gcs->LogToFile("rov_v3_gcs");
+    controller->Control->LogToFile("rov_v3_gcs");
     commsNode->LogToFile("rov_v3_comms_node");
     commsNode->SetLogFormatter(
         std::make_shared<spdlog::pattern_formatter>("%D %T.%F %v"));
@@ -792,13 +758,8 @@ int main(int argc, char **argv) {
     tf::Quaternion nedRerov;
     merbots_whrov_msgs::debug debugMsg;
 
-    yawPID.SetConstants(vmax, vmin, 10, 20, 0.05);
-    xPID.SetConstants(vmax, vmin, 10, 60, 0.05);
-    yPID.SetConstants(vmax, vmin, 10, 60, 0.05);
-    zPID.SetConstants(vmax, vmin, 20, 10, 0.1);
-
-    double tyaw, cyaw, croll, cpitch;
-    bool firstPIDIteration = true;
+    double cyaw, croll, cpitch;
+    tf::TransformBroadcaster broadcaster;
     while (1) {
       try {
         listener.lookupTransform("local_origin_ned", "erov", ros::Time(0),
@@ -833,111 +794,24 @@ int main(int argc, char **argv) {
       Log->Info("NED: x: {} y: {} z: {} h: {} ({})", ned_x, ned_y, ned_z,
                 heading, g_yaw);
 
-      if (guidedMode && goToMission) {
-        if (firstPIDIteration)
-          ResetPID();
-        firstPIDIteration = false;
-        tf::Vector3 nedTerov = nedMerov.getOrigin();
-        cyaw = tf::getYaw(nedMerov.getRotation());
+      if (goToMission && guidedMode) {
+        std::unique_lock<std::mutex> lock(goToMission_mutex);
+        if (!runningMission) {
+          controller->ResetPID();
+          runningMission = true;
+        }
+        broadcaster.sendTransform(tf::StampedTransform(
+            nedMtarget, ros::Time::now(), params.controller_params.ref_tf,
+            params.controller_params.desired_robot_tf));
 
-        tf::Vector3 nedTtarget = nedMtarget.getOrigin();
-        tyaw = tf::getYaw(nedMtarget.getRotation());
-
-        rovMtarget = nedMerov.inverse() * nedMtarget;
-
-        tf::Vector3 erovTtarget = rovMtarget.getOrigin();
-        tf::Quaternion erovRtarget = rovMtarget.getRotation();
-        double vx, vy, vz;
-        double vTlpX = erovTtarget.getX(), vTlpY = erovTtarget.getY(),
-               vTlpZ = erovTtarget.getZ();
-
-        double elapsedSecs = timer.Elapsed() / 1000.;
-
-        GetLinearXVel(elapsedSecs, vTlpX, vx);
-        GetLinearYVel(elapsedSecs, vTlpY, vy);
-        GetLinearZVel(elapsedSecs, -vTlpZ, vz);
-
-        if (vx > 100)
-          vx = 100;
-        if (vx < -100)
-          vx = -100;
-        if (vy > 100)
-          vy = 100;
-        if (vy < -100)
-          vy = -100;
-        if (vz > 100)
-          vz = 100;
-        if (vz < -100)
-          vz = -100;
-
-        double rdiff = tf::getYaw(erovRtarget);
-        double rv0 = keepHeadingIteration(elapsedSecs, rdiff);
-
-        double baseZ = -77;
-        double newZ = vz + baseZ;
-        auto x = ceil(ArduSubXYR(vx));
-        auto y = ceil(ArduSubXYR(vy));
-        auto z = ceil(ArduSubZ(newZ));
-        auto r = ceil(ArduSubXYR(rv0));
-
-        double yoffset = 60;
-        double xoffset = 60;
-        double roffset = 400;
-        double zoffset = 10;
-        double deadband = 0;
-        double zoffsetPos = 0;
-
-        if (y > deadband)
-            y += yoffset;
-        else if (y < -deadband)
-            y -= yoffset;
-
-        if (x > deadband)
-            x += xoffset;
-        else if (x < -deadband)
-            x -= xoffset;
-
-        if (z > 500)
-            z += zoffsetPos;
-        else if (z < 500)
-            z -= zoffset;
-
-        if (r > deadband)
-            r += roffset + 5;
-        else if (r < -deadband)
-            r -= roffset;
-
-        debugMsg.pout_yaw = r;
-        debugMsg.pout_x = x;
-        debugMsg.pout_y = y;
-        debugMsg.pout_z = z;
-        debugMsg.error_yaw = rdiff;
-        debugMsg.error_x = vTlpX;
-        debugMsg.error_y = vTlpY;
-        debugMsg.error_z = -vTlpZ;
-        debugMsg.target_yaw = tyaw;
-        debugMsg.target_x = nedTtarget.getX();
-        debugMsg.target_y = nedTtarget.getY();
-        debugMsg.target_z = nedTtarget.getZ();
-        debugMsg.current_yaw = cyaw;
-        debugMsg.current_x = nedTerov.getX();
-        debugMsg.current_y = nedTerov.getY();
-        debugMsg.current_z = nedTerov.getZ();
-
-        debugPublisher0.publish(debugMsg);
-        Log->Info("T.DIST: {}", nedTerov.distance(nedTtarget));
-
-        gcs->SetManualControl(x, y, z, r);
-        timer.Reset();
-      } else {
-        firstPIDIteration = true;
+        controller->ControlState.mode = FLY_MODE_R::GUIDED;
       }
       std::this_thread::sleep_for(chrono::milliseconds(100));
     }
   });
   guidedWorker.detach();
 
-  gcs->Start();
+  controller->Start();
   try {
     ros::Rate rate(20); // 20 hz
 
