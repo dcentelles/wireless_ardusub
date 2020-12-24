@@ -36,7 +36,7 @@ using namespace control;
 struct Params {
   mavlink_ros::OperatorController::Params controller_params;
   std::string serialPort, masterUri, dccommsId;
-  bool log2Console, log2File;
+  bool log2Console, log2File, checkAddr;
 };
 
 struct HROVPose {
@@ -77,10 +77,12 @@ static int lastImageSize = -1;
 
 static int desiredOrientation;
 static bool keepOrientation;
+static std::mutex keepOrientation_mutex;
 static std::condition_variable keepOrientation_cond;
 
 static uint16_t holdChannelSeconds;
 static bool holdChannelReceived;
+static std::mutex holdChannel_mutex;
 static std::condition_variable holdChannel_cond;
 
 static bool cancelLastOrderFlag;
@@ -148,6 +150,70 @@ void notifyROVReady() {
   currentHROVMessageV2->Ready(true);
   notifyHROVMessageUpdated();
   currentHROVMessage_mutex.unlock();
+}
+
+PID yawPID;
+
+void keepHeadingIteration(void) {
+  if (armed) {
+  }
+}
+
+void keepHeadingWorkLoop() {
+  bool keepingHeading = false;
+  double vmax = 1000, vmin = -1000;
+  if (params.controller_params.sitl) {
+    yawPID.SetConstants(vmax, vmin, 10, 20, 0.05);
+  } else {
+    yawPID.SetConstants(vmax, vmin, 10, 20, 0.05);
+  }
+  while (1) {
+    std::unique_lock<std::mutex> lock(keepOrientation_mutex);
+    while (!keepOrientation) {
+      currentHROVMessage_mutex.lock();
+      keepingHeading = false;
+      currentHROVMessageV2->KeepingHeadingFlag(false);
+      currentHROVMessage_mutex.unlock();
+      currentHROVMessage_cond.notify_one();
+      Log->Debug("Keep orientation disabled");
+      keepOrientation_cond.wait(lock);
+      Log->Debug("Keep orientation received!");
+    }
+    if (!keepingHeading) {
+      currentHROVMessage_mutex.lock();
+      keepingHeading = true;
+      currentHROVMessageV2->KeepingHeadingFlag(true);
+      currentHROVMessage_mutex.unlock();
+      currentHROVMessage_cond.notify_one();
+    }
+
+    keepHeadingIteration();
+    this_thread::sleep_for(chrono::milliseconds(100));
+  }
+}
+
+void holdChannelWork() {
+  notifyROVBusy();
+  commsNode->HoldChannel(true);
+  Log->Info("Hold channel set");
+  this_thread::sleep_for(chrono::seconds(holdChannelSeconds));
+  Log->Info("Hold channel unsetting");
+  commsNode->HoldChannel(false);
+  Log->Info("Hold channel unset");
+  notifyROVReady();
+}
+
+void holdChannelWorkLoop() {
+  while (1) {
+    Log->Info("Waiting hold channel order");
+    std::unique_lock<std::mutex> lock(holdChannel_mutex);
+    while (!holdChannelReceived)
+      holdChannel_cond.wait(lock);
+    Log->Info("Hold channel received: {} s", holdChannelSeconds);
+    holdChannelReceived = false;
+    holdChannelWork();
+    Log->Info("Hold channel finished");
+  }
 }
 
 // static double vmax = 1000, vmin = -1000;
@@ -252,6 +318,7 @@ void handleNewOrder() {
         break;
       }
       case OperatorMessageV2::OrderType::KeepOrientation: {
+        std::unique_lock<std::mutex> lock(keepOrientation_mutex);
         desiredOrientation = currentOperatorMessage->GetKeepOrientationValue();
         Log->Info("Received keep orientation order: {} degrees",
                   desiredOrientation);
@@ -260,6 +327,7 @@ void handleNewOrder() {
         break;
       }
       case OperatorMessageV2::OrderType::DisableKeepOrientation: {
+        std::unique_lock<std::mutex> lock(keepOrientation_mutex);
         Log->Info("Received disable keep orientation order");
         keepOrientation = false;
         keepOrientation_cond.notify_one();
@@ -437,6 +505,8 @@ void operatorMsgParserWork() {
 void startWorkers() {
   operatorMsgParserWorker = std::thread(operatorMsgParserWork);
   messageSenderWorker = std::thread(messageSenderWork);
+  keepOrientationWorker = std::thread(keepHeadingWorkLoop);
+  holdChannelWorker = std::thread(holdChannelWorkLoop);
 
   std::thread poseWorker([&]() {
     PoseRegister reg;
@@ -619,7 +689,8 @@ int getParams() {
   params.controller_params.use_tf = true;
   params.controller_params.ref_tf = "local_origin_ned";
   params.controller_params.robot_tf = "erov";
-  params.controller_params.desired_robot_tf = "rov_target";
+  params.controller_params.desired_robot_tf = "hil_received_target";
+  params.checkAddr = true;
 
   std::string serialPort;
   if (!nh.getParam("port", serialPort)) {
@@ -658,6 +729,12 @@ int getParams() {
     params.log2File = log2File;
   }
 
+  if (!nh.getParam("checkAddr", params.checkAddr)) {
+    Log->Info("checkAddr set to default => {}", params.checkAddr);
+  } else {
+    Log->Info("checkAddr: {}", params.checkAddr);
+  }
+
   return 0;
 }
 
@@ -676,7 +753,7 @@ int main(int argc, char **argv) {
       CreateObject<mavlink_ros::OperatorController>(params.controller_params);
 
   Log->SetLogLevel(cpplogging::LogLevel::info);
-  // Log->FlushLogOn(cpplogging::LogLevel::info);
+  Log->FlushLogOn(cpplogging::LogLevel::info);
   Log->LogToConsole(params.log2Console);
 
   controller->Control->SetLogName("GCS");
@@ -689,6 +766,7 @@ int main(int argc, char **argv) {
   initROSInterface(argc, argv);
   startWorkers();
   commsNode = dccomms::CreateObject<ROV>();
+  commsNode->SetEnableSrcAddrCheck(params.checkAddr);
 
   commsNode->SetImageTrunkLength(DEFAULT_IMG_TRUNK_LENGTH);
   commsNode->SetAsyncMode();

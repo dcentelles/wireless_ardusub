@@ -13,12 +13,15 @@
   <arg name="image" default="/usb_cam/image_raw"/>
   <arg name="imageTransport" default="raw"/>
   <arg name="encodedImage" default="encoded_image"/>
+  <arg name="sitl" default="true"/>
+
   <group ns="$(arg namespace)">
     <node if="$(arg launchComms)" pkg="wireless_ardusub" type="rov_v3" name="rov_v3" output="screen" required="true">
       <param name="port" value="$(arg port)" type="string"/>
       <param name="log2Console" value="$(arg log2Console)" type="bool"/>
       <param name="log2File" value="$(arg log2File)" type="bool"/>
       <param name="dccommsId" value="$(arg dccommsId)" type="string"/>
+      <param name="sitl" value="$(arg sitl)" type="bool"/>
     </node>
   </group>
   <group if="$(arg launchImage)">
@@ -29,4 +32,5 @@
       <arg name="namespace" value="$(arg namespace)"/>
     </include>
   </group>
+
 </launch>

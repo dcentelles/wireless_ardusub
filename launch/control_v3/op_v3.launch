@@ -10,7 +10,9 @@
   <arg name="log2File" default="false"/>
   <arg name="launchComms" default="true"/>
   <arg name="launchJoy" default="true"/>
- 
+  <arg name="targetPoseTopic" default="/hil_target/pose"/>
+  <arg name="rovPoseTopic" default="/hil_comms/pose"/>
+
   <node if="$(arg launchJoy)" respawn="true" pkg="joy" type="joy_node" name="joy_node" output="screen">
     <param name="dev" value="/dev/input/js0" type="string"/>
   </node>
@@ -29,6 +31,8 @@
 	<param name="dccommsId" value="$(arg dccommsId)" type="string"/>
 	<param name="log2Console" value="$(arg log2Console)" type="bool"/>
 	<param name="log2File" value="$(arg log2File)" type="bool"/>
+	<param name="targetPoseTopic" value="$(arg targetPoseTopic)" type="string"/>
+	<param name="rovPoseTopic" value="$(arg rovPoseTopic)" type="string"/>
      </node>
 
      <node if="$(arg launchHMI)" pkg="whrov_hmi" type="whrov_hmi" name="whrov_hmi" output="screen" required="true"/>

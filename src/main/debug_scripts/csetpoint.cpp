@@ -37,6 +37,7 @@ int main(int argc, char **argv) {
 
   OperatorController op(params);
   JoyController joyCtr(nh);
+  joyCtr.SetLogLevel(info);
   op.Start();
 
   auto joyCb = [&](JoyController &joy_ctr,

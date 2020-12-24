@@ -34,7 +34,10 @@ using namespace telerobotics;
 
 struct Params {
   std::string serialPort, masterUri, dccommsId;
+  std::string target_pose_topic = "bluerov2_tx_target/pose";
+  std::string rov_pose_topic = "bluerov2/pose";
   bool log2Console, log2File;
+  bool checkAddr = true;
   int imageTrunkSize = DEFAULT_IMG_TRUNK_LENGTH;
 };
 
@@ -94,6 +97,25 @@ int getParams() {
     Log->Info("imageTrunkSize: {}", params.imageTrunkSize);
   }
 
+  if (!nh.param("targetPoseTopic", params.target_pose_topic,
+                params.target_pose_topic)) {
+    Log->Info("target_pose_topic set to default => {}",
+              params.target_pose_topic);
+  } else {
+    Log->Info("target_pose_topic: {}", params.target_pose_topic);
+  }
+
+  if (!nh.param("rovPoseTopic", params.rov_pose_topic, params.rov_pose_topic)) {
+    Log->Info("rov_pose_topic set to default => {}", params.rov_pose_topic);
+  } else {
+    Log->Info("rov_pose_topic: {}", params.rov_pose_topic);
+  }
+
+  if (!nh.getParam("checkAddr", params.checkAddr)) {
+    Log->Info("checkAddr set to default => {}", params.checkAddr);
+  } else {
+    Log->Info("checkAddr: {}", params.checkAddr);
+  }
   return 0;
 }
 
@@ -148,6 +170,14 @@ private:
   ros::Publisher _currentHROVState_pub;
   ros::Publisher _encodedImage_pub;
   ros::Publisher _pose_pub;
+  ros::Publisher _target_pose_pub;
+  tf::Quaternion _target_ned_orientation;
+  tf::Vector3 _target_ned_position;
+  tf::Transform _nedMtarget;
+  tf::Quaternion _target_world_orientation;
+  tf::Vector3 _target_world_position;
+  tf::Transform _worldMtarget;
+  geometry_msgs::Pose _target_pose_msg;
   dynamic_reconfigure::Server<wireless_ardusub::wireless_teleop_joyConfig>
       _server;
   wireless_ardusub::wireless_teleop_joyConfig _config;
@@ -171,6 +201,7 @@ private:
       _posePublisher;
 
   bool _world_ned_set = false;
+  tf::StampedTransform _world_ned_tf;
 
   // FUNCTIONS
   bool RisingEdge(const sensor_msgs::Joy::ConstPtr &joy, int index);
@@ -279,14 +310,13 @@ void OperatorController::StartWorkers() {
   });
 
   _posePublisher = std::thread([this]() {
-    tf::StampedTransform world_ned_tf;
     while (1) {
       if (_world_ned_set) {
         std::this_thread::sleep_for(chrono::milliseconds(20));
         std::unique_lock<std::mutex> lock(_ned_tf_mutex);
         _ned_tf_cond.wait(lock);
 
-        tf::Transform wMv = world_ned_tf * _ned_tf;
+        tf::Transform wMv = _world_ned_tf * _ned_tf;
         tf::Vector3 position = wMv.getOrigin();
         tf::Quaternion orientation = wMv.getRotation();
         geometry_msgs::Pose msg;
@@ -303,7 +333,7 @@ void OperatorController::StartWorkers() {
           _pose_listener.waitForTransform("world", "local_origin_ned",
                                           ros::Time(0), ros::Duration(1));
           _pose_listener.lookupTransform("world", "local_origin_ned",
-                                         ros::Time(0), world_ned_tf);
+                                         ros::Time(0), _world_ned_tf);
           _world_ned_set = true;
         } catch (tf::TransformException &e) {
           ROS_ERROR("Not able to lookup transform: %s", e.what());
@@ -346,7 +376,9 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
   _encodedImage_pub =
       _nh.advertise<image_utils_ros_msgs::EncodedImg>("encoded_image", 1);
 
-  _pose_pub = _nh.advertise<geometry_msgs::Pose>("/bluerov2/pose", 1);
+  _pose_pub = _nh.advertise<geometry_msgs::Pose>(params.rov_pose_topic, 1);
+  _target_pose_pub =
+      _nh.advertise<geometry_msgs::Pose>(params.target_pose_topic, 1);
 
   _currentOperatorMessage = OperatorMessageV2::Build();
   _currentHROVMessage = HROVMessageV2::BuildHROVMessageV2();
@@ -355,6 +387,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
   _teleopOrder = TeleopOrder::Build();
   SetArming(false);
   _node = CreateObject<Operator>();
+  _node->SetEnableSrcAddrCheck(params.checkAddr);
   _node->SetLogLevel(LogLevel::info);
   _node->SetLogFormatter(
       std::make_shared<spdlog::pattern_formatter>("%D %T.%F %v"));
@@ -624,8 +657,7 @@ void OperatorController::ActionWorker(
   case 1: // HOLD TIME
   {
     Log->info("Hold image channel order received");
-    _currentOperatorMessage->SetHoldChannelOrder(goal->hold_channel_duration +
-                                                 5);
+    _currentOperatorMessage->SetHoldChannelOrder(goal->hold_channel_duration);
     break;
   }
   case 2: { // UPDATE IMAGE SETTINGS
@@ -648,6 +680,34 @@ void OperatorController::ActionWorker(
               heading, yaw);
     _currentHROVMessage->SetNavMode(ARDUSUB_NAV_MODE::NAV_GUIDED);
     _currentOperatorMessage->SetGoToOrder(x, y, z, heading);
+
+    if (_world_ned_set) {
+      _target_ned_position[0] = goal->x;
+      _target_ned_position[1] = goal->y;
+      _target_ned_position[2] = goal->depth;
+      _target_ned_orientation.setRPY(0, 0, yaw);
+      _target_ned_orientation.normalize();
+
+      _nedMtarget.setOrigin(_target_ned_position);
+      _nedMtarget.setRotation(_target_ned_orientation);
+
+      _worldMtarget = _world_ned_tf * _nedMtarget;
+      _target_world_position = _worldMtarget.getOrigin();
+      _target_world_orientation = _worldMtarget.getRotation();
+
+      _target_pose_msg.position.x = _target_world_position.x();
+      _target_pose_msg.position.y = _target_world_position.y();
+      _target_pose_msg.position.z = _target_world_position.z();
+      _target_pose_msg.orientation.x = _target_world_orientation.x();
+      _target_pose_msg.orientation.y = _target_world_orientation.y();
+      _target_pose_msg.orientation.z = _target_world_orientation.z();
+      _target_pose_msg.orientation.w = _target_world_orientation.w();
+
+      Log->info("GoTo World: {} ; {} ; {} ", _target_pose_msg.position.x,
+                _target_pose_msg.position.y, _target_pose_msg.position.z);
+
+      _target_pose_pub.publish(_target_pose_msg);
+    }
     break;
   }
   }
@@ -704,7 +764,7 @@ void OperatorController::ActionWorker(
   {
     _node->DisableTransmission();
     hrovStateLock.unlock();
-    this_thread::sleep_for(chrono::seconds(goal->hold_channel_duration + 5));
+    this_thread::sleep_for(chrono::seconds(goal->hold_channel_duration + 1));
     hrovStateLock.lock();
     _node->EnableTransmission();
     break;
