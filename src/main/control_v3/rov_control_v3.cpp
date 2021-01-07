@@ -404,11 +404,11 @@ void messageSenderWork() {
     commsNode->SetCurrentTxState(currentHROVMessageV2->GetBuffer(),
                                  currentHROVMessageV2->GetMsgSize());
     auto armed = currentHROVMessageV2->Armed();
-    Log->Info("OWN STATE - OID: {} ; CC: {} ; RDY: {} ; HD: {} ; NAV: {} ; "
-              "ARMED: {} ; x:y:z: "
-              "{} : {} : {}",
-              oid, cancelled ? 1 : 0, ready ? 1 : 0, heading, navMode,
-              armed ? 1 : 0, x, y, altitude);
+//    Log->Info("OWN STATE - OID: {} ; CC: {} ; RDY: {} ; HD: {} ; NAV: {} ; "
+//              "ARMED: {} ; x:y:z: "
+//              "{} : {} : {}",
+//              oid, cancelled ? 1 : 0, ready ? 1 : 0, heading, navMode,
+//              armed ? 1 : 0, x, y, altitude);
     currentHROVMessage_updated = false;
   }
 }
@@ -469,10 +469,10 @@ void operatorMsgParserWork() {
         // z control: y = 200/1000x - 100
         // x,y and r control: y = 200/2000x
 
-        Log->Info(
-            "Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
-            lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
-            lastOrder->GetR(), lastOrder->Arm() ? "true" : "false", modeName);
+//        Log->Info(
+//            "Send order: X: {} ; Y: {} ; Z: {} ; R: {} ; Arm: {} ; Mode: {}",
+//            lastOrder->GetX(), lastOrder->GetY(), lastOrder->GetZ(),
+//            lastOrder->GetR(), lastOrder->Arm() ? "true" : "false", modeName);
 
         double xNorm = getJoyAxisNormalized(x);
         double yNorm = getJoyAxisNormalized(y);
@@ -510,7 +510,7 @@ void startWorkers() {
 
   std::thread poseWorker([&]() {
     PoseRegister reg;
-    double error = 0.5;
+    double error = 0.1;
     bool recoveringLastPose = false;
     while (1) {
       std::unique_lock<std::mutex> lock(ned_mutex);
@@ -526,7 +526,7 @@ void startWorkers() {
         }
         lock.unlock();
         std::this_thread::sleep_for(chrono::seconds(2));
-        Log->Info("Pose stack size: {}", poseStack.size());
+        Log->Info("Pose stack size: {}. CP: {} {} {} {}", poseStack.size(), ned_x, ned_y, ned_z, g_yaw);
       } else {
         // Pose recovery
         double x, y, z, yaw;
@@ -569,8 +569,8 @@ void handleNewImage(image_utils_ros_msgs::EncodedImgConstPtr msg) {
     }
   } else {
     if (lastImageSize != emsg.max_size) {
-      Log->Warn("TX CANCEL LAST IMAGE {} {} {}", lastImageSize, emsg.max_size,
-                msg->img.size());
+      //Log->Warn("TX CANCEL LAST IMAGE {} {} {}", lastImageSize, emsg.max_size,
+      //          msg->img.size());
       commsNode->CancelLastImage();
     }
   }
@@ -758,7 +758,7 @@ int main(int argc, char **argv) {
 
   controller->Control->SetLogName("GCS");
   controller->Control->SetAsyncMode();
-  controller->Control->SetLogLevel(info);
+  controller->Control->SetLogLevel(off);
   arm(false);
   controller->Control->LogToConsole(params.log2Console);
   controller->Control->EnableGPSMock(false);
@@ -796,7 +796,7 @@ int main(int argc, char **argv) {
     Log->Info("dccomms ID: {}", dccommsId);
 
     dccomms::Ptr<IPacketBuilder> pb =
-        dccomms::CreateObject<VariableLengthPacketBuilder>();
+        dccomms::CreateObject<WAFrameBuilder>();
 
     dccomms::Ptr<CommsDeviceService> commsService;
     commsService = dccomms::CreateObject<CommsDeviceService>(pb);
@@ -810,7 +810,7 @@ int main(int argc, char **argv) {
   commsNode->SetLogLevel(LogLevel::info);
 
   commsNode->SetOrdersReceivedCallback([](ROV &receiver) {
-    Log->Info("Orders received!");
+    //Log->Info("Orders received!");
     uint8_t state[300];
     receiver.GetCurrentRxState(state);
 
@@ -832,8 +832,8 @@ int main(int argc, char **argv) {
     tf::TransformListener listener;
     tf::StampedTransform nedMerov;
     tf::Transform rovMtarget;
-    tf::Vector3 nedTerov;
-    tf::Quaternion nedRerov;
+    tf::Vector3 nedTerov(0, 0, 0);
+    tf::Quaternion nedRerov(0, 0, 0);
     merbots_whrov_msgs::debug debugMsg;
 
     double cyaw, croll, cpitch;
@@ -845,8 +845,10 @@ int main(int argc, char **argv) {
       } catch (tf::TransformException &ex) {
         Log->Warn("TF: {}", ex.what());
         position_lost = true;
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        continue;
+        // std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        // continue;a
+        nedMerov.setOrigin(nedTerov);
+        nedMerov.setRotation(nedRerov);
       }
       position_lost = false;
       ned_mutex.lock();
@@ -869,8 +871,8 @@ int main(int argc, char **argv) {
       currentHROVMessage_mutex.unlock();
       currentHROVMessage_cond.notify_one();
 
-      Log->Info("NED: x: {} y: {} z: {} h: {} ({})", ned_x, ned_y, ned_z,
-                heading, g_yaw);
+//      Log->Info("NED: x: {} y: {} z: {} h: {} ({})", ned_x, ned_y, ned_z,
+//                heading, g_yaw);
 
       if (goToMission && guidedMode) {
         std::unique_lock<std::mutex> lock(goToMission_mutex);

@@ -10,7 +10,7 @@
 #include <actionlib/server/simple_action_server.h>
 #include <cmath>
 #include <cpplogging/cpplogging.h>
-#include <dccomms_packets/VariableLengthPacket.h>
+#include <telerobotics/WAFrame.h>
 #include <dccomms_utils/S100Stream.h>
 #include <dynamic_reconfigure/server.h>
 #include <geometry_msgs/Pose.h>
@@ -411,7 +411,7 @@ OperatorController::OperatorController(ros::NodeHandle &nh)
     Info("dccomms ID: {}", dccommsId);
 
     dccomms::Ptr<IPacketBuilder> pb =
-        dccomms::CreateObject<VariableLengthPacketBuilder>();
+        dccomms::CreateObject<WAFrameBuilder>();
 
     dccomms::Ptr<CommsDeviceService> commsService;
     commsService = dccomms::CreateObject<CommsDeviceService>(pb);
